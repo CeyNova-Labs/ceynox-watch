@@ -113,9 +113,15 @@ The last row matters. macOS does not allow a sandbox inside a sandbox, so a prog
 
 ## Install
 
-Download the archive for your system from the [releases page](https://github.com/CeyNova-Labs/ceynox-watch/releases), check it against `SHA256SUMS`, and put the `ceynox-watch` binary somewhere on your `PATH`. The Linux binaries are static and run on any distribution; the macOS binary runs on both Apple silicon and Intel.
+With [Homebrew](https://brew.sh), on macOS or Linux:
 
-The macOS binary is not signed with an Apple developer certificate. If you download it with a browser, macOS marks it as quarantined and refuses to run it. Either download with `curl`, which sets no such mark, or clear it once:
+```sh
+brew install ceynova-labs/tap/ceynox-watch
+```
+
+Or download the archive for your system from the [releases page](https://github.com/CeyNova-Labs/ceynox-watch/releases), check it against `SHA256SUMS`, and put the `ceynox-watch` binary somewhere on your `PATH`. The Linux binaries are static and run on any distribution; the macOS binary runs on both Apple silicon and Intel.
+
+The macOS binary is not signed with an Apple developer certificate. Installed through Homebrew it runs as it is. If you download it with a browser instead, macOS marks it as quarantined and refuses to run it. Either download with `curl`, which sets no such mark, or clear it once:
 
 ```sh
 xattr -d com.apple.quarantine ./ceynox-watch

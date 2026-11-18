@@ -19,12 +19,19 @@ cat <<RUBY
 class CeynoxWatch < Formula
   desc "See what a command really does: programs, network, credentials touched"
   homepage "https://github.com/CeyNova-Labs/ceynox-watch"
-  version "$version"
   license "Apache-2.0"
 
+  # The macOS archive holds one universal binary, so both architectures
+  # point at the same file.
   on_macos do
-    url "$base/$mac"
-    sha256 "$(sum "$mac")"
+    on_arm do
+      url "$base/$mac"
+      sha256 "$(sum "$mac")"
+    end
+    on_intel do
+      url "$base/$mac"
+      sha256 "$(sum "$mac")"
+    end
   end
 
   on_linux do

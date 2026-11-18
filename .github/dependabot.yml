@@ -1,0 +1,16 @@
+# Keeps the pinned GitHub Actions and the Rust dependencies current. Each
+# update arrives as a pull request and has to pass CI like any other change.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: /crates/ceynox-watch-ebpf
+    schedule:
+      interval: weekly
