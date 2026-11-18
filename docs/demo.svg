@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1438 774" width="1438" height="774" role="img" aria-label="ceynox-watch watching npm install: an install script reads AWS credentials and an SSH key">
+<rect width="1438" height="774" rx="10" fill="#0d1117"/>
+<circle cx="22" cy="18.0" r="6" fill="#ff5f57"/>
+<circle cx="42" cy="18.0" r="6" fill="#febc2e"/>
+<circle cx="62" cy="18.0" r="6" fill="#28c840"/>
+<g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#d7dae0" xml:space="preserve">
+<text x="18" y="48"><tspan fill="#7ee787">$</tspan><tspan> ceynox-watch -- .venv/bin/pip install -q ../sneaky-pip</tspan></text>
+<text x="18" y="67"><tspan fill="#7d8590">   0.000s</tspan><tspan>  </tspan><tspan fill="#79c0ff">exec </tspan><tspan>  python3 .venv/bin/pip install -q ../sneaky-pip</tspan></text>
+<text x="18" y="86"><tspan fill="#7d8590">   0.184s</tspan><tspan>  </tspan><tspan fill="#79c0ff">exec </tspan><tspan>    uname -rs</tspan></text>
+<text x="18" y="105"><tspan fill="#7d8590">   0.199s</tspan><tspan>  </tspan><tspan fill="#79c0ff">exec </tspan><tspan>    python3 …/pip/__pip-runner__.py install --ignore-installed --no-user --pref…</tspan></text>
+<text x="18" y="124"><tspan fill="#7d8590">   0.348s</tspan><tspan>  </tspan><tspan fill="#79c0ff">exec </tspan><tspan>      uname -rs</tspan></text>
+<text x="18" y="143"><tspan fill="#7d8590">   0.362s</tspan><tspan>  </tspan><tspan fill="#7ee787">net  </tspan><tspan>  pypi.org:443 (151.101.192.223)  tcp, https</tspan><tspan fill="#7d8590">  python3</tspan></text>
+<text x="18" y="162"><tspan fill="#7d8590">   0.869s</tspan><tspan>  </tspan><tspan fill="#7ee787">net  </tspan><tspan>  files.pythonhosted.org:443 (151.101.128.223)  tcp, https</tspan><tspan fill="#7d8590">  python3</tspan></text>
+<text x="18" y="181"><tspan fill="#7d8590">   1.481s</tspan><tspan>  </tspan><tspan fill="#79c0ff">exec </tspan><tspan>    python3 …/_in_process/_in_process.py get_requires_for_bu…</tspan><tspan fill="#7d8590">  [pypi:sneaky-pip]</tspan></text>
+<text x="18" y="200"><tspan fill="#7d8590">   1.671s</tspan><tspan>  </tspan><tspan font-weight="bold" fill="#ff7b72">READ </tspan><tspan>  ~/.aws/credentials  </tspan><tspan fill="#e3b341">AWS credentials (credentials)</tspan><tspan fill="#7d8590">  python3 [pypi:sneaky-pip]</tspan></text>
+<text x="18" y="219"><tspan fill="#7d8590">   1.671s</tspan><tspan>  </tspan><tspan font-weight="bold" fill="#ff7b72">READ </tspan><tspan>  ~/.ssh/id_ed25519  </tspan><tspan fill="#e3b341">SSH private key (credentials)</tspan><tspan fill="#7d8590">  python3 [pypi:sneaky-pip]</tspan></text>
+<text x="18" y="238"><tspan fill="#7d8590">   1.675s</tspan><tspan>  </tspan><tspan fill="#7ee787">net  </tspan><tspan>  example.com:443 (104.20.23.154)  tcp, https</tspan><tspan fill="#7d8590">  python3 [pypi:sneaky-pip]</tspan></text>
+<text x="18" y="257"><tspan fill="#7d8590">   1.719s</tspan><tspan>  </tspan><tspan fill="#79c0ff">exec </tspan><tspan>    python3 …/_in_process/_in_process.py prepare_metadata_fo…</tspan><tspan fill="#7d8590">  [pypi:sneaky-pip]</tspan></text>
+<text x="18" y="276"><tspan fill="#7d8590">   1.784s</tspan><tspan>  </tspan><tspan font-weight="bold" fill="#ff7b72">READ </tspan><tspan>  ~/.aws/credentials  </tspan><tspan fill="#e3b341">AWS credentials (credentials)</tspan><tspan fill="#7d8590">  python3 [pypi:sneaky-pip]</tspan></text>
+<text x="18" y="295"><tspan fill="#7d8590">   1.784s</tspan><tspan>  </tspan><tspan font-weight="bold" fill="#ff7b72">READ </tspan><tspan>  ~/.ssh/id_ed25519  </tspan><tspan fill="#e3b341">SSH private key (credentials)</tspan><tspan fill="#7d8590">  python3 [pypi:sneaky-pip]</tspan></text>
+<text x="18" y="314"><tspan fill="#7d8590">   1.831s</tspan><tspan>  </tspan><tspan fill="#79c0ff">exec </tspan><tspan>    python3 …/_in_process/_in_process.py build_wheel /tmp/tm…</tspan><tspan fill="#7d8590">  [pypi:sneaky-pip]</tspan></text>
+<text x="18" y="333"><tspan fill="#7d8590">   1.896s</tspan><tspan>  </tspan><tspan font-weight="bold" fill="#ff7b72">READ </tspan><tspan>  ~/.aws/credentials  </tspan><tspan fill="#e3b341">AWS credentials (credentials)</tspan><tspan fill="#7d8590">  python3 [pypi:sneaky-pip]</tspan></text>
+<text x="18" y="352"><tspan fill="#7d8590">   1.896s</tspan><tspan>  </tspan><tspan font-weight="bold" fill="#ff7b72">READ </tspan><tspan>  ~/.ssh/id_ed25519  </tspan><tspan fill="#e3b341">SSH private key (credentials)</tspan><tspan fill="#7d8590">  python3 [pypi:sneaky-pip]</tspan></text>
+<text x="18" y="371"></text>
+<text x="18" y="390"><tspan fill="#7d8590">── ceynox-watch ──────────────────────────────────────────────────────────────</tspan></text>
+<text x="18" y="409"><tspan> </tspan><tspan font-weight="bold">.venv/bin/pip install -q ../sneaky-pip</tspan><tspan>  2.0s  exit 0</tspan></text>
+<text x="18" y="428"></text>
+<text x="18" y="447"><tspan> </tspan><tspan font-weight="bold">PROCESSES</tspan><tspan>  9 started, 7 programs run</tspan></text>
+<text x="18" y="466"><tspan>   python3 ×5  uname ×2</tspan></text>
+<text x="18" y="485"></text>
+<text x="18" y="504"><tspan> </tspan><tspan font-weight="bold">NETWORK</tspan><tspan>  3 destinations</tspan></text>
+<text x="18" y="523"><tspan>   pypi.org:443 (151.101.192.223)  tcp, https</tspan><tspan fill="#7d8590">  python3</tspan></text>
+<text x="18" y="542"><tspan>   files.pythonhosted.org:443 (151.101.128.223)  tcp, https</tspan><tspan fill="#7d8590">  python3</tspan></text>
+<text x="18" y="561"><tspan>   example.com:443 (104.20.23.154)  tcp, https</tspan><tspan fill="#7d8590">  ×3</tspan><tspan fill="#7d8590">  python3 [pypi:sneaky-pip]</tspan></text>
+<text x="18" y="580"></text>
+<text x="18" y="599"><tspan> </tspan><tspan font-weight="bold">FILES</tspan><tspan>  783 read, 524 written</tspan></text>
+<text x="18" y="618"><tspan>   written  /tmp/pip-build-env-rj5iho8f (470)  ~/sneaky-pip (12)  /tmp/pip-modern-metadata-b8xr89mm (11)  ./.venv (8)  ~/.cache (7)  /tmp/tmpnq6lsxjt (2)  +12 more</tspan></text>
+<text x="18" y="637"><tspan>   read     ./.venv (320)  /tmp/pip-build-env-rj5iho8f (230)  /usr/lib (190)  ~/sneaky-pip (9)  /tmp/pip-modern-metadata-b8xr89mm (7)  /etc/ssl (2)  +21 more</tspan></text>
+<text x="18" y="656"></text>
+<text x="18" y="675"><tspan> </tspan><tspan font-weight="bold" fill="#ff7b72">WORTH A LOOK</tspan><tspan>  2</tspan></text>
+<text x="18" y="694"><tspan>   </tspan><tspan font-weight="bold" fill="#ff7b72">read </tspan><tspan>  ~/.aws/credentials  </tspan><tspan fill="#e3b341">AWS credentials (credentials)</tspan><tspan fill="#7d8590">  ×3</tspan></text>
+<text x="18" y="713"><tspan>          </tspan><tspan fill="#7d8590">python3 …/_in_process/_in_process.py get_requir… ← python3 .venv/bin/pip install -q ../sneaky-pip  [pypi:sneaky-pip]</tspan></text>
+<text x="18" y="732"><tspan>   </tspan><tspan font-weight="bold" fill="#ff7b72">read </tspan><tspan>  ~/.ssh/id_ed25519  </tspan><tspan fill="#e3b341">SSH private key (credentials)</tspan><tspan fill="#7d8590">  ×3</tspan></text>
+<text x="18" y="751"><tspan>          </tspan><tspan fill="#7d8590">python3 …/_in_process/_in_process.py get_requir… ← python3 .venv/bin/pip install -q ../sneaky-pip  [pypi:sneaky-pip]</tspan></text>
+</g></svg>

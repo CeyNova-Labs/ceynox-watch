@@ -1,0 +1,29 @@
+[package]
+name = "ceynox-watch-ebpf"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR GPL-2.0-only"
+publish = false
+description = "Kernel-side eBPF programs for ceynox-watch"
+
+[dependencies]
+ceynox-watch-common = { path = "../ceynox-watch-common" }
+aya-ebpf = "0.3"
+
+[[bin]]
+name = "ceynox-watch-ebpf"
+path = "src/main.rs"
+
+[profile.dev]
+opt-level = 3
+debug = false
+overflow-checks = false
+panic = "abort"
+
+[profile.release]
+opt-level = 3
+lto = true
+panic = "abort"
+codegen-units = 1
+
+[workspace]

@@ -1,0 +1,129 @@
+name: Release
+
+# Pushing a tag vX.Y.Z builds the binaries, tests them, and opens a draft
+# release with them attached. Publishing the draft is a manual step.
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Version from the tag
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          grep -q "^version = \"$version\"$" Cargo.toml || { echo "tag $GITHUB_REF_NAME does not match Cargo.toml"; exit 1; }
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the toolchain image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: dev
+          tags: ceynox-watch-dev
+          load: true
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+      - name: Build a static binary
+        run: dev/run.sh cargo build --release --locked --target ${{ matrix.arch }}-unknown-linux-musl
+      - name: Test the binary that ships
+        run: dev/run.sh env CEYNOX_WATCH_BIN=/target/${{ matrix.arch }}-unknown-linux-musl/release/ceynox-watch dev/integration.sh
+      - name: Package
+        run: |
+          mkdir out stage
+          dev/run.sh cp /target/${{ matrix.arch }}-unknown-linux-musl/release/ceynox-watch /src/stage/
+          cp LICENSE README.md stage/
+          tar -C stage -czf "out/ceynox-watch-$VERSION-linux-${{ matrix.arch }}.tar.gz" ceynox-watch LICENSE README.md
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-${{ matrix.arch }}
+          path: out/*
+          if-no-files-found: error
+
+  macos:
+    name: macOS universal
+    # macos-15: Apple silicon, from a pool that has machines to give (see ci.yml).
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Version from the tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # stable
+        with:
+          toolchain: stable
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - name: Build both architectures
+        env:
+          # Keep the build machine's home directory out of the binary.
+          RUSTFLAGS: --remap-path-prefix=/Users/runner=
+        run: |
+          cargo build --release --locked --target aarch64-apple-darwin
+          cargo build --release --locked --target x86_64-apple-darwin
+          mkdir -p stage out
+          lipo -create -output stage/ceynox-watch \
+            target/aarch64-apple-darwin/release/ceynox-watch \
+            target/x86_64-apple-darwin/release/ceynox-watch
+          lipo -archs stage/ceynox-watch
+      - name: Test the binary that ships
+        run: CEYNOX_WATCH_BIN="$PWD/stage/ceynox-watch" dev/integration-macos.sh
+      - name: Package
+        run: |
+          cp LICENSE README.md stage/
+          tar -C stage -czf "out/ceynox-watch-$VERSION-macos-universal.tar.gz" ceynox-watch LICENSE README.md
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-universal
+          path: out/*
+          if-no-files-found: error
+
+  release:
+    name: Draft release
+    needs: [linux, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          # Only the archives. The Docker build step uploads a build record
+          # as an artifact of its own, which does not belong in a release.
+          pattern: "{linux,macos}-*"
+          path: dist
+          merge-multiple: true
+      - name: Checksums and Homebrew formula
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          (cd dist && sha256sum ceynox-watch-*.tar.gz > SHA256SUMS && cat SHA256SUMS)
+          packaging/formula.sh "$version" dist > dist/ceynox-watch.rb
+      # Build provenance, verifiable with `gh attestation verify`. GitHub
+      # offers it to public repositories.
+      - name: Attest
+        if: github.event.repository.visibility == 'public'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/ceynox-watch-*.tar.gz
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --draft --verify-tag --title "$GITHUB_REF_NAME" --generate-notes

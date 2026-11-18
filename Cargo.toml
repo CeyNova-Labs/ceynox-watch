@@ -1,0 +1,39 @@
+[workspace]
+resolver = "3"
+members = ["crates/ceynox-watch", "crates/ceynox-watch-common"]
+# The kernel programs build for the bpfel-unknown-none target with a pinned
+# nightly. crates/ceynox-watch/build.rs drives that build on Linux, so a plain
+# `cargo build` never needs the BPF target elsewhere.
+exclude = ["crates/ceynox-watch-ebpf"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/CeyNova-Labs/ceynox-watch"
+authors = ["CeyNova Labs"]
+rust-version = "1.90"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "deny"
+dbg_macro = "deny"
+todo = "deny"
+unwrap_used = "warn"
+
+# Dependencies are optimized in development builds too: the loader parses
+# several megabytes of kernel type information at start-up, which is slow
+# unoptimized.
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"
+overflow-checks = true

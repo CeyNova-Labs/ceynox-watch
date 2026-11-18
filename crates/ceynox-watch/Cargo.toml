@@ -1,0 +1,25 @@
+[package]
+name = "ceynox-watch"
+description = "See what a command, a package install or an AI coding agent really does on your machine: files, network, child processes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+keywords = ["security", "supply-chain", "ebpf", "tracing", "observability"]
+categories = ["command-line-utilities", "development-tools"]
+
+[lints]
+workspace = true
+
+[dependencies]
+lexopt = "0.3"
+rustix = { version = "1", features = ["event", "fs", "net", "process", "stdio", "termios", "thread", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+signal-hook = { version = "0.4", default-features = false }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+aya = "0.16"
+ceynox-watch-common = { version = "0.1.0", path = "../ceynox-watch-common" }

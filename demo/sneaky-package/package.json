@@ -1,0 +1,9 @@
+{
+  "name": "sneaky-package",
+  "version": "1.0.0",
+  "description": "Harmless stand-in for a package with a credential-reading install script. For demonstrating ceynox-watch.",
+  "license": "Apache-2.0",
+  "scripts": {
+    "postinstall": "node collect.js"
+  }
+}

@@ -1,0 +1,13 @@
+[package]
+name = "ceynox-watch-common"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+description = "Record layouts shared by the ceynox-watch kernel programs and their loader"
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true
