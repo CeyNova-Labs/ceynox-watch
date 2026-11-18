@@ -40,6 +40,27 @@ hasnt "$T/a.err" "public keys are not flagged" "id_ed25519.pub  "
 has "$T/a.jsonl" "json events" '"type":"exec"' '"type":"open","path":"'"$(echo "$HOME" | sed 's|^/private||')"'/.aws/credentials"'
 [ ! -s "$T/a.out" ] && ok "nothing added to the command's stdout" || fail "stdout was touched"
 
+echo "additional credential locations"
+mkdir -p "$HOME/.config/rclone" "$HOME/.config/sops/age" "$HOME/Library/Application Support/sops/age"
+for credential_file in \
+  "$HOME/.pgpass" \
+  "$HOME/.config/rclone/rclone.conf" \
+  "$HOME/.config/sops/age/keys.txt" \
+  "$HOME/Library/Application Support/sops/age/keys.txt"; do
+  echo fake > "$credential_file"
+done
+"$BIN" --color never -- /bin/sh -c '
+  cat "$HOME/.pgpass" "$HOME/.config/rclone/rclone.conf" \
+    "$HOME/.config/sops/age/keys.txt" "$HOME/Library/Application Support/sops/age/keys.txt" >/dev/null
+' > "$T/credentials.out" 2> "$T/credentials.err" || fail "credential reads"
+has "$T/credentials.err" "new credential locations" \
+  "READ   ~/.pgpass  PostgreSQL passwords" \
+  "READ   ~/.config/rclone/rclone.conf  rclone storage credentials" \
+  "READ   ~/.config/sops/age/keys.txt  age private keys (sops)" \
+  "READ   ~/Library/Application Support/sops/age/keys.txt  age private keys (sops)"
+has "$T/credentials.err" "all four credential files counted" "WORTH A LOOK  4"
+[ ! -s "$T/credentials.out" ] && ok "credential contents stay off stdout" || fail "credential stdout was touched"
+
 echo "children are attached to their parent"
 "$BIN" --color never -- /bin/sh -c '/bin/sh -c "cat .env > /dev/null"' 2> "$T/t.err" || fail "nested shells"
 has "$T/t.err" "indented under the command" "exec     " "environment file"
