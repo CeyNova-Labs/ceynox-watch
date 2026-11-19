@@ -266,7 +266,11 @@ The macOS binary is not signed with an Apple developer certificate. Installed th
 xattr -d com.apple.quarantine ./ceynox-watch
 ```
 
-You do not have to take the binary on trust either way: the checksums are published with each release, the build is done in the open by the [release workflow](.github/workflows/release.yml), and you can build it yourself from source.
+You do not have to take the binary on trust either way: the checksums are published with each release, the build is done in the open by the [release workflow](.github/workflows/release.yml), and you can build it yourself from source. Each release also carries signed build provenance, which ties an archive to the workflow run that built it:
+
+```sh
+gh attestation verify ceynox-watch-*.tar.gz --repo CeyNova-Labs/ceynox-watch
+```
 
 <details>
 <summary><b>Build from source</b></summary>
@@ -352,6 +356,7 @@ A tool you run as root in front of untrusted code should hold up to scrutiny.
 - **The watched command never runs as root** and never holds a file descriptor of the helper.
 - **No `unsafe` in the user-space program**: `#![forbid(unsafe_code)]`. The kernel programs need `unsafe` to read kernel memory through BPF helpers; each use carries its justification, and the kernel's verifier checks the result independently before anything runs.
 - **Untrusted input is treated as such.** DNS replies and kernel type information are parsed with bounds checks everywhere and tested against truncated and corrupted input. Everything a watched process controls (file names, arguments, socket paths) is stripped of terminal control sequences before it is printed, so a file name cannot repaint your screen.
+- **The parsers are fuzzed.** The three that read input nobody here controls (DNS replies, the packet capture, kernel type information) have fuzz targets in [`fuzz/`](fuzz), run on every change.
 - **Nothing leaves your machine.** No telemetry, no update check, no network access of any kind.
 - **An inspected package gets a container and little else.** The container holds only the capabilities the sensor needs (`BPF`, `PERFMON`, `NET_RAW`, a few for reading `/proc` and changing user), and the install runs as an unprivileged user with none of them. The package name is checked against what registries allow before it is handed to the package manager, and the recording is kept where the install cannot write.
 - **Few dependencies**, all listed in `Cargo.lock`, checked in CI against known advisories and a license allowlist.

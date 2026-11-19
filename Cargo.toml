@@ -4,7 +4,7 @@ members = ["crates/ceynox-watch", "crates/ceynox-watch-common"]
 # The kernel programs build for the bpfel-unknown-none target with a pinned
 # nightly. crates/ceynox-watch/build.rs drives that build on Linux, so a plain
 # `cargo build` never needs the BPF target elsewhere.
-exclude = ["crates/ceynox-watch-ebpf"]
+exclude = ["crates/ceynox-watch-ebpf", "fuzz"]
 
 [workspace.package]
 version = "0.2.2"
