@@ -7,7 +7,9 @@
 # The kernel programs are Rust compiled to BPF bytecode. That needs a nightly
 # toolchain with rust-src, and bpf-linker built against the LLVM major version
 # that nightly uses.
-FROM rust:1-trixie
+# Pinned by digest, so the toolchain image cannot change underneath a
+# build. Dependabot proposes the new digest when the tag moves.
+FROM rust:1-trixie@sha256:223cc32ddca8f3ee90c436dbc94b6b5f052ea7f9653c5201e9612f08ad7d21b8
 
 ARG BPF_TOOLCHAIN=nightly-2026-09-12
 ARG BPF_LINKER_VERSION=0.13.0

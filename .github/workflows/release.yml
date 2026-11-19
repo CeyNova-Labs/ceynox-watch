@@ -134,10 +134,18 @@ jobs:
       # Build provenance, verifiable with `gh attestation verify`. GitHub
       # offers it to public repositories.
       - name: Attest
+        id: attest
         if: github.event.repository.visibility == 'public'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: dist/ceynox-watch-*.tar.gz
+      # The same provenance as a file beside the archives, for those who
+      # verify without asking GitHub: `gh attestation verify --bundle`.
+      - name: Attach the provenance
+        if: steps.attest.outputs.bundle-path != ''
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: cp "$BUNDLE" "dist/ceynox-watch-${GITHUB_REF_NAME#v}.intoto.jsonl"
       - name: Draft the release
         env:
           GH_TOKEN: ${{ github.token }}

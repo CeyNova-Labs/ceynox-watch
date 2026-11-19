@@ -4,9 +4,14 @@ ceynox-watch runs with elevated privileges in front of code you do not trust. Bu
 
 ## Reporting a vulnerability
 
-Please report privately through GitHub: **Security → Report a vulnerability** on this repository. Do not open a public issue for something exploitable.
+Please report privately, in either of two ways:
 
-Include what you did, what happened, and the kernel and distribution you were on. A proof of concept helps but is not required. You will get an acknowledgement within three working days, and credit in the release notes unless you prefer otherwise.
+- through GitHub: [**Security → Report a vulnerability**](https://github.com/CeyNova-Labs/ceynox-watch/security/advisories/new) on this repository;
+- by email to [security@ceynovahq.com](mailto:security@ceynovahq.com).
+
+Do not open a public issue for something exploitable.
+
+Include what you did, what happened, and the kernel and distribution you were on. A proof of concept helps but is not required. You will get an acknowledgement within three working days, and credit in the release notes unless you prefer otherwise. A fix for a confirmed vulnerability is released as soon as it is ready, and the details are published with it or shortly after, at a time agreed with you. If 90 days pass without a fix, you are free to publish.
 
 ## What counts
 

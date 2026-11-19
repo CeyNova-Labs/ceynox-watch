@@ -14,3 +14,11 @@ updates:
     directory: /crates/ceynox-watch-ebpf
     schedule:
       interval: weekly
+  - package-ecosystem: cargo
+    directory: /fuzz
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /dev
+    schedule:
+      interval: weekly

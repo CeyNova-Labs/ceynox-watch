@@ -1,0 +1,47 @@
+# Fuzz targets for the parsers that read input nobody here controls: DNS
+# replies off the wire, a packet capture, and the kernel's type information.
+#
+#   cargo install cargo-fuzz
+#   cargo +nightly fuzz run dns
+#
+# A crate of its own, outside the workspace: it needs a nightly compiler and
+# the fuzzing runtime, which the program itself must never depend on.
+[package]
+name = "ceynox-watch-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde = { version = "1", features = ["derive"] }
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "dns"
+path = "fuzz_targets/dns.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "btf"
+path = "fuzz_targets/btf.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "capture"
+path = "fuzz_targets/capture.rs"
+test = false
+doc = false
+bench = false
