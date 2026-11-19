@@ -15,11 +15,15 @@ Usage:
   ceynox-watch [options] --pid <pid>[,<pid>...]   watch running processes
   ceynox-watch [options] --all                    watch the whole machine
   ceynox-watch [options] --view <file> [--follow] show a --json file, formatted
+  ceynox-watch [options] --inspect <package>      install a package in a throwaway
+                                                  container and watch that
 
 Examples:
   ceynox-watch -- npm install
   ceynox-watch -- pip install -r requirements.txt
   ceynox-watch --pid $(pgrep -n claude)
+  ceynox-watch --inspect npm:left-pad@1.3.0
+  ceynox-watch --baseline install.json --fail-on new -- npm ci
 
 Options:
   -q, --quiet          no live output, only the summary
@@ -27,6 +31,16 @@ Options:
       --no-summary     no summary at the end
       --json <file>    also write every event as JSON, one per line
                        (\"-\" for standard output, with --pid or --all)
+      --report <file>  also write the run as a page to share: .html or .md
+      --baseline <file>
+                       say what this run did that an earlier one did not.
+                       The file is a baseline, or a --json recording
+      --write-baseline <file>
+                       save what this run did, to compare later runs with
+      --fail-on <what> exit with status 3 when the command itself succeeded
+                       but something in the catalog was touched (flagged)
+                       or something was not in the baseline (new)
+      --image <image>  with --inspect: the container image to install in
       --color <when>   auto, always or never [default: auto]
       --hosts          macOS: show addresses and host names of connections.
                        Asks sudo to run the system's tcpdump. (Linux always
@@ -57,6 +71,11 @@ pub struct Options {
     pub color: Color,
     pub buffer_mb: u32,
     pub hosts: bool,
+    pub report: Option<OsString>,
+    pub baseline: Option<OsString>,
+    pub write_baseline: Option<OsString>,
+    pub fail_on_flagged: bool,
+    pub fail_on_new: bool,
 }
 
 impl Default for Options {
@@ -69,6 +88,11 @@ impl Default for Options {
             color: Color::Auto,
             buffer_mb: 16,
             hosts: false,
+            report: None,
+            baseline: None,
+            write_baseline: None,
+            fail_on_flagged: false,
+            fail_on_new: false,
         }
     }
 }
@@ -91,6 +115,14 @@ pub enum Invocation {
     View {
         file: OsString,
         follow: bool,
+        opts: Options,
+    },
+    /// Install a package in a throwaway container, watched.
+    Inspect {
+        package: String,
+        image: Option<String>,
+        /// A command to run in the container after the install.
+        then: Vec<OsString>,
         opts: Options,
     },
     /// Internal: the privileged half, started through sudo. Writes events to
@@ -133,6 +165,8 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Invocation, Str
     let mut scope: Option<Scope> = None;
     let mut view: Option<OsString> = None;
     let mut follow = false;
+    let mut inspect: Option<String> = None;
+    let mut image: Option<String> = None;
     let mut command: Vec<OsString> = Vec::new();
     let mut parser = lexopt::Parser::from_args(raw);
     let text = |e: lexopt::Error| e.to_string();
@@ -161,6 +195,27 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Invocation, Str
                     return Err("--buffer-mb takes a size from 1 to 1024".into());
                 }
             }
+            Long("report") => {
+                let file = parser.value().map_err(text)?;
+                if crate::export::Format::of(&file).is_none() {
+                    return Err(format!("--report writes .html or .md; '{}' is neither", file.to_string_lossy()));
+                }
+                opts.report = Some(file);
+            }
+            Long("baseline") => opts.baseline = Some(parser.value().map_err(text)?),
+            Long("write-baseline") => opts.write_baseline = Some(parser.value().map_err(text)?),
+            Long("fail-on") => {
+                let v: String = parser.value().map_err(text)?.parse().map_err(text)?;
+                for what in v.split(',') {
+                    match what {
+                        "flagged" => opts.fail_on_flagged = true,
+                        "new" => opts.fail_on_new = true,
+                        _ => return Err(format!("--fail-on takes flagged or new, not '{what}'")),
+                    }
+                }
+            }
+            Long("inspect") => inspect = Some(parser.value().map_err(text)?.parse().map_err(text)?),
+            Long("image") => image = Some(parser.value().map_err(text)?.parse().map_err(text)?),
             Long("all") => scope = Some(Scope::All),
             Long("view") => view = Some(parser.value().map_err(text)?),
             Short('f') | Long("follow") => follow = true,
@@ -188,8 +243,28 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Invocation, Str
     if opts.quiet && opts.verbose {
         return Err("--quiet and --verbose contradict each other".into());
     }
-    if opts.quiet && !opts.summary && opts.json.is_none() {
-        return Err("--quiet with --no-summary and no --json would show nothing".into());
+    let other_output = opts.json.is_some()
+        || opts.report.is_some()
+        || opts.write_baseline.is_some()
+        || opts.fail_on_flagged
+        || opts.fail_on_new;
+    if opts.quiet && !opts.summary && !other_output {
+        return Err("--quiet with --no-summary would show nothing; add --json, --report or --fail-on".into());
+    }
+    if opts.fail_on_new && opts.baseline.is_none() {
+        return Err("--fail-on new needs something to compare with: add --baseline <file>".into());
+    }
+    if image.is_some() && inspect.is_none() {
+        return Err("--image goes with --inspect".into());
+    }
+    if let Some(package) = inspect {
+        if scope.is_some() || view.is_some() || follow {
+            return Err("--inspect installs a package; it cannot be combined with --pid, --all or --view".into());
+        }
+        if opts.json.as_ref().is_some_and(|j| j == "-") {
+            return Err("--json - would mix with the install's own output; give a file name".into());
+        }
+        return Ok(Invocation::Inspect { package, image, then: command, opts });
     }
     if let Some(file) = view {
         if scope.is_some() || !command.is_empty() {
@@ -292,6 +367,63 @@ mod tests {
         assert!(p(&["--view", "x", "--", "ls"]).is_err());
         assert!(p(&["--view", "x", "--json", "y"]).is_err());
         assert!(p(&["--follow", "--all"]).is_err());
+    }
+
+    #[test]
+    fn reports_and_baselines() {
+        let Ok(Invocation::Run { opts, .. }) = p(&[
+            "--report",
+            "run.html",
+            "--baseline",
+            "b.json",
+            "--write-baseline",
+            "b.json",
+            "--fail-on",
+            "flagged,new",
+            "--",
+            "npm",
+            "ci",
+        ]) else {
+            panic!("expected run");
+        };
+        assert_eq!(opts.report, Some(OsString::from("run.html")));
+        assert_eq!(opts.baseline, Some(OsString::from("b.json")));
+        assert_eq!(opts.write_baseline, Some(OsString::from("b.json")));
+        assert!(opts.fail_on_flagged && opts.fail_on_new);
+        assert!(p(&["--report", "run.txt", "--", "ls"]).is_err());
+        assert!(p(&["--fail-on", "everything", "--", "ls"]).is_err());
+        assert!(p(&["--fail-on", "new", "--", "ls"]).is_err(), "nothing to compare with");
+        assert!(p(&["--fail-on", "flagged", "--", "ls"]).is_ok());
+        // Silent on the terminal is fine when the result goes elsewhere.
+        assert!(p(&["-q", "--no-summary", "--", "ls"]).is_err());
+        assert!(p(&["-q", "--no-summary", "--fail-on", "flagged", "--", "ls"]).is_ok());
+        assert!(p(&["-q", "--no-summary", "--write-baseline", "b.json", "--", "ls"]).is_ok());
+        // A recording can be turned into a report, and compared, afterwards.
+        assert!(p(&["--view", "a.jsonl", "--report", "a.md", "--baseline", "b.jsonl", "--fail-on", "new"]).is_ok());
+    }
+
+    #[test]
+    fn inspect_mode() {
+        assert_eq!(
+            p(&["--inspect", "npm:left-pad@1.3.0", "-q"]),
+            Ok(Invocation::Inspect {
+                package: "npm:left-pad@1.3.0".into(),
+                image: None,
+                then: vec![],
+                opts: Options { quiet: true, ..Options::default() }
+            })
+        );
+        let Ok(Invocation::Inspect { image, then, .. }) =
+            p(&["--inspect", "pypi:requests", "--image", "python:3.12-slim", "--", "python", "-c", "import requests"])
+        else {
+            panic!("expected inspect");
+        };
+        assert_eq!(image.as_deref(), Some("python:3.12-slim"));
+        assert_eq!(then, os(&["python", "-c", "import requests"]));
+        assert!(p(&["--inspect", "npm:x", "--all"]).is_err());
+        assert!(p(&["--inspect", "npm:x", "--view", "f"]).is_err());
+        assert!(p(&["--inspect", "npm:x", "--json", "-"]).is_err());
+        assert!(p(&["--image", "x", "--", "ls"]).is_err());
     }
 
     #[test]

@@ -478,7 +478,99 @@ fn package_of(p: &Proc) -> Option<String> {
         let name = krate.rsplit_once('-').map_or(krate, |(n, _)| n);
         return Some(format!("crate:{name}"));
     }
-    None
+    run_from_registry(&p.argv)
+}
+
+/// A package fetched and run in one go: `npx <package>`, `uvx <package>`
+/// and their relatives. This is how AI agents start most MCP servers, and
+/// what was asked for is on the command line. The label is the runner and
+/// the name as given, which is not always the name of the package that
+/// provides it (`npx tsc` runs the `typescript` package).
+fn run_from_registry(argv: &[String]) -> Option<String> {
+    // The runner is the program, or a script handed to an interpreter
+    // (`node /usr/bin/npx`, `env node /usr/bin/npx`).
+    let first = argv.first()?.rsplit('/').next()?;
+    let behind = match first {
+        "env" => 2,
+        "node" | "bun" | "sh" | "bash" | "python" | "python3" => 1,
+        _ => 0,
+    };
+    runner_at(argv, 0).or_else(|| if behind > 0 { runner_at(argv, behind) } else { None })
+}
+
+/// [`run_from_registry`] with the runner expected at `argv[skip]`.
+fn runner_at(argv: &[String], skip: usize) -> Option<String> {
+    let runner = argv.get(skip)?.rsplit('/').next()?.to_string();
+    let mut rest = argv[skip + 1..].iter().map(String::as_str).peekable();
+    // Runners that are a subcommand of something else.
+    let (label, python) = match runner.as_str() {
+        "npx" => ("npx", false),
+        "bunx" => ("bunx", false),
+        "uvx" => ("uvx", true),
+        "npm" if matches!(rest.peek(), Some(&"exec" | &"x")) => ("npx", false),
+        "bun" if rest.peek() == Some(&"x") => ("bunx", false),
+        "pnpm" if rest.peek() == Some(&"dlx") => ("pnpm", false),
+        "yarn" if rest.peek() == Some(&"dlx") => ("yarn", false),
+        "pipx" if rest.peek() == Some(&"run") => ("pipx", true),
+        "uv" if rest.peek() == Some(&"tool") => {
+            rest.next();
+            if rest.peek() != Some(&"run") {
+                return None;
+            }
+            ("uvx", true)
+        }
+        _ => return None,
+    };
+    if !matches!(runner.as_str(), "npx" | "bunx" | "uvx") {
+        rest.next();
+    }
+    let mut named = None;
+    let mut found = None;
+    while let Some(arg) = rest.next() {
+        match arg {
+            "--" => {
+                found = rest.next();
+                break;
+            }
+            // Options that name the package outright.
+            "-p" | "--package" | "--from" | "--spec" if !(python && arg == "-p") => named = named.or(rest.next()),
+            // A command line to run, not a package.
+            "-c" | "--call" => return named.and_then(|n| registry_name(label, n, python)),
+            // Options that take a value.
+            "--with" | "--python" | "-p" | "--index" | "--index-url" | "--registry" | "--prefix" | "--cache" => {
+                rest.next();
+            }
+            _ if arg.starts_with("--package=") || arg.starts_with("--from=") => {
+                named = named.or(arg.split_once('=').map(|(_, v)| v));
+            }
+            _ if arg.starts_with('-') => {}
+            _ => {
+                found = Some(arg);
+                break;
+            }
+        }
+    }
+    registry_name(label, named.or(found)?, python)
+}
+
+/// `runner:name`, with the version and extras cut off. `None` for what is
+/// not a registry name: a path, a URL.
+fn registry_name(label: &str, spec: &str, python: bool) -> Option<String> {
+    if spec.starts_with(['.', '/', '~']) || spec.contains("://") || spec.contains(':') {
+        return None;
+    }
+    let name = if python {
+        spec.split(['=', '<', '>', '!', '~', '[', '@']).next()?
+    } else {
+        match spec.char_indices().skip(1).find(|(_, c)| *c == '@') {
+            Some((at, _)) => &spec[..at],
+            None => spec,
+        }
+    };
+    let ok = !name.is_empty()
+        && name.len() <= 214
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '@' | '/' | '~'));
+    ok.then(|| format!("{label}:{name}"))
 }
 
 #[cfg(test)]
@@ -608,6 +700,53 @@ mod tests {
             "python3 …/_in_process/_in_process.py",
             "a long script path is shown by its last two components"
         );
+    }
+
+    #[test]
+    fn packages_run_straight_from_a_registry() {
+        let run = |argv: &[&str]| run_from_registry(&argv.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        assert_eq!(
+            run(&["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"]).as_deref(),
+            Some("npx:@modelcontextprotocol/server-filesystem")
+        );
+        assert_eq!(run(&["node", "/usr/local/bin/npx", "--yes", "cowsay@1.6.0", "hi"]).as_deref(), Some("npx:cowsay"));
+        assert_eq!(run(&["/usr/bin/env", "node", "/usr/bin/npx", "cowsay"]).as_deref(), Some("npx:cowsay"));
+        assert_eq!(run(&["npx", "-p", "typescript@5", "tsc", "--version"]).as_deref(), Some("npx:typescript"));
+        assert_eq!(run(&["npx", "--package=typescript", "-c", "tsc -v"]).as_deref(), Some("npx:typescript"));
+        assert_eq!(run(&["npx", "-c", "echo hi"]), None);
+        assert_eq!(run(&["npm", "exec", "--", "cowsay", "hi"]).as_deref(), Some("npx:cowsay"));
+        assert_eq!(run(&["npm", "install", "cowsay"]), None);
+        assert_eq!(run(&["bunx", "cowsay"]).as_deref(), Some("bunx:cowsay"));
+        assert_eq!(run(&["bun", "x", "cowsay"]).as_deref(), Some("bunx:cowsay"));
+        assert_eq!(run(&["pnpm", "dlx", "create-vite@latest", "app"]).as_deref(), Some("pnpm:create-vite"));
+        assert_eq!(run(&["yarn", "dlx", "cowsay"]).as_deref(), Some("yarn:cowsay"));
+        assert_eq!(run(&["uvx", "mcp-server-git", "--repository", "."]).as_deref(), Some("uvx:mcp-server-git"));
+        assert_eq!(run(&["uvx", "--from", "ruff==0.6.0", "ruff", "check"]).as_deref(), Some("uvx:ruff"));
+        assert_eq!(run(&["uvx", "--python", "3.12", "ruff"]).as_deref(), Some("uvx:ruff"));
+        assert_eq!(run(&["uv", "tool", "run", "ruff[fast]>=0.6"]).as_deref(), Some("uvx:ruff"));
+        assert_eq!(run(&["uv", "tool", "install", "ruff"]), None);
+        assert_eq!(run(&["pipx", "run", "--spec", "black==24.1", "black"]).as_deref(), Some("pipx:black"));
+        // Not registry names: a local path, a URL, a host.
+        assert_eq!(run(&["npx", "./local-tool"]), None);
+        assert_eq!(run(&["npx", "https://example.com/x.tgz"]), None);
+        assert_eq!(run(&["npx", "github:user/repo"]), None);
+        // The word alone, somewhere in a command line, means nothing.
+        assert_eq!(run(&["echo", "npx", "cowsay"]), None);
+        assert_eq!(run(&["npx"]), None);
+        assert_eq!(run(&[]), None);
+    }
+
+    #[test]
+    fn a_package_installed_under_a_runner_keeps_its_own_name() {
+        let mut r = report();
+        r.ingest(&exec(0, 10, 1, &["npx", "-y", "some-server"], "/home/sam"));
+        r.ingest(&fork(1, 11, 10));
+        r.ingest(&exec(2, 11, 10, &["node", "install.js"], "/home/sam/.npm/_npx/ab12/node_modules/esbuild"));
+        r.ingest(&fork(3, 12, 10));
+        r.ingest(&exec(4, 12, 10, &["sh", "-c", "some-server"], "/home/sam"));
+        assert_eq!(r.package(0).as_deref(), Some("npx:some-server"));
+        assert_eq!(r.package(1).as_deref(), Some("npm:esbuild"));
+        assert_eq!(r.package(2).as_deref(), Some("npx:some-server"));
     }
 
     #[test]

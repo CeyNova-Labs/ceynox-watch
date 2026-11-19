@@ -1,0 +1,135 @@
+name: ceynox-watch
+description: >-
+  See what a build step really does: the programs it starts, the hosts it
+  talks to, the credentials it touches. Optionally fail when that changes.
+author: CeyNova Labs
+branding:
+  icon: eye
+  color: gray-dark
+
+inputs:
+  run:
+    description: The command to watch, run with bash.
+    required: true
+  baseline:
+    description: >-
+      Path of a baseline file in the repository. When the file exists, the
+      run is compared with it and the report says what is new.
+    default: ""
+  fail-on:
+    description: >-
+      Fail the step when the command succeeded but did something unwelcome:
+      "flagged" (something in the catalog was touched), "new" (something
+      was not in the baseline), or both separated by a comma.
+    default: ""
+  working-directory:
+    description: Directory to run the command in.
+    default: ""
+  version:
+    description: The ceynox-watch release to use, such as v0.2.0. Defaults to the version of this action.
+    default: ""
+  binary:
+    description: Path of a ceynox-watch binary to use instead of downloading a release.
+    default: ""
+
+outputs:
+  report:
+    description: >-
+      Path of the Markdown report, which is also added to the job summary.
+      Each output is also set as an environment variable for later steps
+      (CEYNOX_WATCH_REPORT, CEYNOX_WATCH_RECORDING, CEYNOX_WATCH_BASELINE).
+    value: ${{ steps.watch.outputs.report }}
+  recording:
+    description: Path of the full recording, for `ceynox-watch --view`.
+    value: ${{ steps.watch.outputs.recording }}
+  baseline:
+    description: Path of this run's baseline. Commit it to compare later runs with this one.
+    value: ${{ steps.watch.outputs.baseline }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install ceynox-watch
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        ACTION_REF: ${{ github.action_ref }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_BINARY: ${{ inputs.binary }}
+      run: |
+        set -euo pipefail
+        dir="$RUNNER_TEMP/ceynox-watch-bin"
+        mkdir -p "$dir"
+        if [ -n "$INPUT_BINARY" ]; then
+          install -m 755 "$INPUT_BINARY" "$dir/ceynox-watch"
+        else
+          repo=CeyNova-Labs/ceynox-watch
+          version="$INPUT_VERSION"
+          if [ -z "$version" ]; then
+            if [[ "$ACTION_REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              version="$ACTION_REF"
+            else
+              version="$(gh release view --repo "$repo" --json tagName --jq .tagName)"
+            fi
+          fi
+          case "$RUNNER_OS-$RUNNER_ARCH" in
+            Linux-X64) asset=linux-x86_64 ;;
+            Linux-ARM64) asset=linux-aarch64 ;;
+            macOS-*) asset=macos-universal ;;
+            *) echo "::error::ceynox-watch has no build for $RUNNER_OS $RUNNER_ARCH"; exit 1 ;;
+          esac
+          file="ceynox-watch-${version#v}-$asset.tar.gz"
+          gh release download "$version" --repo "$repo" --pattern "$file" --pattern SHA256SUMS --dir "$dir/download"
+          # The archive must be the one the release's checksum file names.
+          (cd "$dir/download" && grep -F " $file" SHA256SUMS | shasum -a 256 -c -)
+          tar -xzf "$dir/download/$file" -C "$dir"
+          rm -rf "$dir/download"
+        fi
+        "$dir/ceynox-watch" --version
+        echo "$dir" >> "$GITHUB_PATH"
+
+    - name: Watch
+      id: watch
+      shell: bash
+      env:
+        INPUT_RUN: ${{ inputs.run }}
+        INPUT_BASELINE: ${{ inputs.baseline }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_WORKDIR: ${{ inputs.working-directory }}
+      run: |
+        set -uo pipefail
+        out="$(mktemp -d "$RUNNER_TEMP/ceynox-watch-XXXXXX")"
+        args=(--color always --report "$out/report.md" --json "$out/recording.jsonl" --write-baseline "$out/baseline.json")
+        fail_on="$INPUT_FAIL_ON"
+        if [ -n "$INPUT_BASELINE" ]; then
+          case "$INPUT_BASELINE" in /*) baseline="$INPUT_BASELINE" ;; *) baseline="$GITHUB_WORKSPACE/$INPUT_BASELINE" ;; esac
+          if [ -f "$baseline" ]; then
+            args+=(--baseline "$baseline")
+          else
+            echo "::notice::ceynox-watch: there is no baseline at $INPUT_BASELINE yet, so nothing was compared. This run's baseline is in the step's 'baseline' output; commit it there to start comparing."
+            # Nothing to compare with, so nothing can be new.
+            fail_on="$(printf '%s' "$fail_on" | tr ',' '\n' | grep -vx new | paste -sd, -)"
+          fi
+        fi
+        [ -n "$fail_on" ] && args+=(--fail-on "$fail_on")
+        [ -n "$INPUT_WORKDIR" ] && cd "$INPUT_WORKDIR"
+
+        # The shell this runs in stops at the first failure, and a failing
+        # run is exactly when the report below is wanted.
+        status=0
+        ceynox-watch "${args[@]}" -- bash -eo pipefail -c "$INPUT_RUN" || status=$?
+
+        [ -f "$out/report.md" ] && cat "$out/report.md" >> "$GITHUB_STEP_SUMMARY"
+        {
+          echo "report=$out/report.md"
+          echo "recording=$out/recording.jsonl"
+          echo "baseline=$out/baseline.json"
+        } >> "$GITHUB_OUTPUT"
+        # The same for later steps as environment variables, which do not
+        # depend on this step having succeeded.
+        {
+          echo "CEYNOX_WATCH_REPORT=$out/report.md"
+          echo "CEYNOX_WATCH_RECORDING=$out/recording.jsonl"
+          echo "CEYNOX_WATCH_BASELINE=$out/baseline.json"
+        } >> "$GITHUB_ENV"
+        exit "$status"

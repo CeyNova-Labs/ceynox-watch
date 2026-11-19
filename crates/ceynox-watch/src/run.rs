@@ -45,6 +45,7 @@ use rustix::{
 };
 
 use crate::{
+    baseline::Baseline,
     classify::Classifier,
     cli::{Color, Options},
     event::{Event, What},
@@ -55,6 +56,16 @@ use crate::{
 
 /// Exit status when ceynox-watch itself fails, as opposed to the command.
 pub const FAILURE: i32 = 125;
+/// Exit status when the command succeeded but `--fail-on` did not like
+/// what it did.
+pub const UNWELCOME: i32 = 3;
+
+/// Tells the stand-in which user to become before it becomes the command.
+/// Used when installing a package in a container, where we start as root.
+pub const AS_ENV: &str = "CEYNOX_WATCH_AS";
+/// What to call the run in the summary, in place of the command line.
+/// Set for the watcher inside a container, whose command line is ours.
+pub const TITLE_ENV: &str = "CEYNOX_WATCH_TITLE";
 
 const GATE_ENV: &str = "CEYNOX_WATCH_GATE";
 const GO: &[u8] = b"go";
@@ -63,7 +74,7 @@ const END: &str = "end";
 
 /// A directory of ours (home, the starting directory) in the form the
 /// sensor reports paths in, so that the two can be compared.
-fn as_reported(dir: &str) -> String {
+pub fn as_reported(dir: &str) -> String {
     #[cfg(target_os = "macos")]
     if let Some(short) = crate::sensor::macos::normalize(dir) {
         return short;
@@ -71,7 +82,7 @@ fn as_reported(dir: &str) -> String {
     dir.to_string()
 }
 
-fn say(msg: impl std::fmt::Display) {
+pub fn say(msg: impl std::fmt::Display) {
     eprintln!("ceynox-watch: {msg}");
 }
 
@@ -155,7 +166,23 @@ pub fn exec_main(command: Vec<OsString>) -> i32 {
             return FAILURE;
         }
     }
-    let err = Command::new(&command[0]).args(&command[1..]).env_remove(GATE_ENV).exec();
+    let mut cmd = Command::new(&command[0]);
+    cmd.args(&command[1..]).env_remove(GATE_ENV).env_remove(AS_ENV).env_remove(TITLE_ENV);
+    if let Some(who) = std::env::var_os(AS_ENV) {
+        let ids =
+            who.to_str().and_then(|w| w.split_once(':')).and_then(|(u, g)| Some((u.parse().ok()?, g.parse().ok()?)));
+        match ids {
+            // Supplementary groups are dropped along with the user id.
+            Some((uid, gid)) if rustix::process::geteuid().is_root() => {
+                cmd.uid(uid).gid(gid);
+            }
+            _ => {
+                say(format!("{AS_ENV} needs <uid>:<gid> and root"));
+                return FAILURE;
+            }
+        }
+    }
+    let err = cmd.exec();
     say(format!("cannot run {}: {err}", command[0].to_string_lossy()));
     if err.kind() == io::ErrorKind::NotFound { 127 } else { 126 }
 }
@@ -320,13 +347,13 @@ pub fn sensor_main(scope: Scope, buffer_mb: u32) -> i32 {
 // ---- signals ------------------------------------------------------------------
 
 /// Flags set by the signals that would otherwise kill us mid-report.
-struct Signals {
+pub struct Signals {
     interrupt: Arc<AtomicBool>,
-    terminate: Arc<AtomicBool>,
+    pub terminate: Arc<AtomicBool>,
 }
 
 impl Signals {
-    fn install() -> Self {
+    pub fn install() -> Self {
         use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
         let interrupt = Arc::new(AtomicBool::new(false));
         let terminate = Arc::new(AtomicBool::new(false));
@@ -378,7 +405,13 @@ impl Screen {
             }
         };
         let size = if to_stderr { tcgetwinsize(io::stderr()) } else { tcgetwinsize(io::stdout()) };
-        let width = size.ok().map(|w| usize::from(w.ws_col)).filter(|&w| w >= 40).unwrap_or(100);
+        let width = size
+            .ok()
+            .map(|w| usize::from(w.ws_col))
+            // No terminal of our own: whoever started us may have said.
+            .or_else(|| std::env::var("COLUMNS").ok()?.parse().ok())
+            .filter(|&w| w >= 40)
+            .unwrap_or(100);
         let base = std::env::current_dir().ok().map(|d| as_reported(&d.to_string_lossy()));
         Ok(Self { to_stderr, style: Style { color, width, base }, opts, json, gone: false })
     }
@@ -423,6 +456,8 @@ struct Session {
     shown: std::collections::HashMap<String, u64>,
     /// The command being run, when there is one.
     command: Option<Watched>,
+    /// The earlier run to compare with, and the name of the file it is in.
+    baseline: Option<(Baseline, String)>,
 }
 
 /// Where the watched command is in its life, as told by the sensor.
@@ -444,7 +479,10 @@ const REPEAT_MS: u64 = 5_000;
 
 impl Session {
     fn new(screen: Screen) -> Self {
-        let home = std::env::var("HOME").ok().map(|h| as_reported(&h));
+        Self::with_home(screen, our_home())
+    }
+
+    fn with_home(screen: Screen, home: Option<String>) -> Self {
         Self {
             report: Report::new(Classifier::new(home)),
             screen,
@@ -452,6 +490,7 @@ impl Session {
             me: std::process::id(),
             shown: std::collections::HashMap::new(),
             command: None,
+            baseline: None,
         }
     }
 
@@ -460,6 +499,8 @@ impl Session {
         if ev.pid == self.me {
             return;
         }
+        let mut filled;
+        let mut ev = ev;
         if let Some(cmd) = &mut self.command {
             let own = ev.pid == cmd.pid;
             cmd.started |= own && matches!(ev.what, What::Exec { existing: false, .. });
@@ -467,6 +508,18 @@ impl Session {
                 return;
             }
             cmd.exited |= own && matches!(ev.what, What::Exit { .. });
+            // The command starts where we are. When the sensor could not
+            // say so, say it for it: a recording is read relative to this.
+            if own
+                && let What::Exec { cwd: None, .. } = &ev.what
+                && let Some(base) = &self.screen.style.base
+            {
+                filled = ev.clone();
+                if let What::Exec { cwd, .. } = &mut filled.what {
+                    *cwd = Some(base.clone());
+                }
+                ev = &filled;
+            }
         }
         self.screen.record(ev);
         let start = *self.start.get_or_insert(ev.ts);
@@ -492,15 +545,88 @@ impl Session {
         }
     }
 
-    fn summarize(&mut self, header: &Header) {
+    /// Everything that happens once the run is over: the summary, the
+    /// comparison, the files asked for, and the verdict of `--fail-on`.
+    /// Takes the exit status so far and returns the one to exit with.
+    fn conclude(&mut self, header: &Header, code: i32, summary: bool) -> i32 {
         self.screen.finish();
-        // With JSON on standard output, the summary would corrupt it.
-        let json_owns_stdout = self.screen.opts.json.as_ref().is_some_and(|j| j == "-") && !self.screen.to_stderr;
-        if self.screen.opts.summary && !json_owns_stdout {
-            let text = render::summary(&self.report, header, &self.screen.style);
-            self.screen.print(text.trim_end_matches('\n'));
+        let style = self.screen.style.clone();
+        let opts = self.screen.opts.clone();
+        let now = Baseline::of(&self.report, &header.title, &style);
+        let diff = self.baseline.as_ref().map(|(earlier, name)| (now.since(earlier), name.clone()));
+
+        // With JSON on standard output, text would corrupt it.
+        let json_owns_stdout = opts.json.as_ref().is_some_and(|j| j == "-") && !self.screen.to_stderr;
+        if opts.summary && !json_owns_stdout {
+            let mut text = if summary { render::summary(&self.report, header, &style) } else { String::new() };
+            if let Some((diff, name)) = &diff {
+                text.push_str(&render::changes(diff, name, &style));
+            }
+            if !text.is_empty() {
+                self.screen.print(text.trim_end_matches('\n'));
+            }
         }
+
+        // Writing a file we were asked for and could not is our failure.
+        let write = |file: &std::ffi::OsStr, text: String| match fs::write(file, text) {
+            Ok(()) => true,
+            Err(e) => {
+                say(format!("cannot write {}: {e}", file.to_string_lossy()));
+                false
+            }
+        };
+        let mut written = true;
+        if let Some(file) = &opts.report {
+            let compared = diff.as_ref().map(|(d, name)| (d, name.as_str()));
+            let text = match crate::export::Format::of(file) {
+                Some(crate::export::Format::Markdown) => {
+                    crate::export::markdown(&self.report, header, &style, compared)
+                }
+                _ => crate::export::html(&self.report, header, &style, compared),
+            };
+            written &= write(file, text);
+        }
+        if let Some(file) = &opts.write_baseline {
+            // A failed run is not what later runs should look like.
+            if code == 0 {
+                written &= write(file, now.to_json());
+            } else {
+                say(format!("{} was not written, because the command failed", file.to_string_lossy()));
+            }
+        }
+        let mut code = if code == 0 && !written { FAILURE } else { code };
+        if code != 0 {
+            return code;
+        }
+        let flagged = render::finding_groups(&self.report, &style).len();
+        if opts.fail_on_flagged && flagged > 0 {
+            say(format!("failing: {} in the catalog touched (--fail-on flagged)", render::count(flagged, "thing")));
+            code = UNWELCOME;
+        }
+        if let Some((diff, name)) = &diff
+            && opts.fail_on_new
+            && !diff.new.is_empty()
+        {
+            say(format!("failing: {} not in {name} (--fail-on new)", render::count(diff.new.len(), "thing")));
+            code = UNWELCOME;
+        }
+        code
     }
+}
+
+/// Read the run to compare with, if one was named. Done before anything
+/// is started, so that a wrong file name costs nothing.
+fn load_baseline(opts: &Options, home: Option<String>) -> Result<Option<(Baseline, String)>, String> {
+    let Some(file) = &opts.baseline else {
+        return Ok(None);
+    };
+    let baseline = Baseline::load(std::path::Path::new(file), home)?;
+    let name = std::path::Path::new(file).file_name().unwrap_or(file).to_string_lossy().into_owned();
+    Ok(Some((baseline, name)))
+}
+
+fn our_home() -> Option<String> {
+    std::env::var("HOME").ok().map(|h| as_reported(&h))
 }
 
 /// Keep taking events until the source is finished and drained, or `limit`
@@ -609,6 +735,13 @@ pub fn run_command(command: Vec<OsString>, opts: Options) -> i32 {
             return FAILURE;
         }
     };
+    let baseline = match load_baseline(&screen.opts, our_home()) {
+        Ok(b) => b,
+        Err(e) => {
+            say(e);
+            return FAILURE;
+        }
+    };
     let (mut child, mut source) = match launch(&command, &screen.opts) {
         Ok(started) => started,
         Err(why) => {
@@ -623,6 +756,7 @@ pub fn run_command(command: Vec<OsString>, opts: Options) -> i32 {
 
     let mut session = Session::new(screen);
     session.command = Some(Watched { pid: root, started: false, exited: false });
+    session.baseline = baseline;
     let began = Instant::now();
     let mut forwarded = false;
     let status = loop {
@@ -690,11 +824,13 @@ pub fn run_command(command: Vec<OsString>, opts: Options) -> i32 {
         say(crate::sensor::macos::NESTED);
     }
     if armed {
-        let title = command.iter().map(|a| a.to_string_lossy()).collect::<Vec<_>>().join(" ");
-        session.summarize(&Header { title, elapsed_ms, exit });
-    } else {
-        session.screen.finish();
+        let title = std::env::var(TITLE_ENV)
+            .ok()
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| command.iter().map(|a| a.to_string_lossy()).collect::<Vec<_>>().join(" "));
+        return session.conclude(&Header { title, elapsed_ms, exit }, code, true);
     }
+    session.screen.finish();
     code
 }
 
@@ -708,6 +844,13 @@ pub fn attach(scope: Scope, opts: Options) -> i32 {
     let quiet = opts.quiet;
     let screen = match Screen::new(opts.clone(), false) {
         Ok(s) => s,
+        Err(e) => {
+            say(e);
+            return FAILURE;
+        }
+    };
+    let baseline = match load_baseline(&opts, our_home()) {
+        Ok(b) => b,
         Err(e) => {
             say(e);
             return FAILURE;
@@ -732,6 +875,7 @@ pub fn attach(scope: Scope, opts: Options) -> i32 {
     }
 
     let mut session = Session::new(screen);
+    session.baseline = baseline;
     let began = Instant::now();
     let mut seen_any = false;
     loop {
@@ -756,8 +900,7 @@ pub fn attach(scope: Scope, opts: Options) -> i32 {
     let elapsed_ms = u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX);
     source.finish();
     drain(&mut source, &mut session, Duration::from_secs(3));
-    session.summarize(&Header { title, elapsed_ms, exit: None });
-    0
+    session.conclude(&Header { title, elapsed_ms, exit: None }, 0, true)
 }
 
 /// `ceynox-watch --view <file>`: show a file written with `--json` the way
@@ -769,6 +912,13 @@ pub fn view(file: &std::ffi::OsStr, follow: bool, opts: Options) -> i32 {
         Ok(f) => f,
         Err(e) => {
             say(format!("cannot read {}: {e}", file.to_string_lossy()));
+            return FAILURE;
+        }
+    };
+    let baseline = match load_baseline(&opts, our_home()) {
+        Ok(b) => b,
+        Err(e) => {
+            say(e);
             return FAILURE;
         }
     };
@@ -784,6 +934,7 @@ pub fn view(file: &std::ffi::OsStr, follow: bool, opts: Options) -> i32 {
     screen.style.base = None;
     let signals = Signals::install();
     let mut session = Session::new(screen);
+    session.baseline = baseline;
     // The watcher's pid in the recording is not ours.
     session.me = 0;
 
@@ -823,6 +974,40 @@ pub fn view(file: &std::ffi::OsStr, follow: bool, opts: Options) -> i32 {
         say(format!("{skipped} lines were not ceynox-watch events and were skipped"));
     }
     let title = file.to_string_lossy().into_owned();
-    session.summarize(&Header { title, elapsed_ms: last.saturating_sub(first.unwrap_or(last)), exit: None });
-    0
+    session.conclude(&Header { title, elapsed_ms: last.saturating_sub(first.unwrap_or(last)), exit: None }, 0, true)
+}
+
+/// Finish a run that was recorded elsewhere and has already been shown:
+/// the comparison, the report, the baseline and `--fail-on`, from the
+/// recording in `file`. `home` is the home directory the command had.
+pub fn conclude_recording(file: &std::path::Path, home: &str, title: String, code: i32, opts: Options) -> i32 {
+    let baseline = match load_baseline(&opts, Some(home.to_string())) {
+        Ok(b) => b,
+        Err(e) => {
+            say(e);
+            return FAILURE;
+        }
+    };
+    let input = match File::open(file) {
+        Ok(f) => f,
+        Err(e) => {
+            say(format!("the recording of the run is missing: {e}"));
+            return if code == 0 { FAILURE } else { code };
+        }
+    };
+    let mut screen = match Screen::new(Options { json: None, ..opts }, true) {
+        Ok(s) => s,
+        Err(e) => {
+            say(e);
+            return FAILURE;
+        }
+    };
+    let (report, base) = crate::baseline::replay(BufReader::new(input).lines(), Some(home.to_string()));
+    screen.style.base = base;
+    let mut session = Session::with_home(screen, Some(home.to_string()));
+    session.baseline = baseline;
+    let elapsed_ms = report.last_ts.saturating_sub(report.first_ts.unwrap_or(report.last_ts));
+    session.report = report;
+    let exit = Some(Exit::Code(code));
+    session.conclude(&Header { title, elapsed_ms, exit }, code, false)
 }

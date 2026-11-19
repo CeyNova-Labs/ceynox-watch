@@ -47,6 +47,8 @@ class CeynoxWatch < Formula
 
   def install
     bin.install "ceynox-watch"
+    # On macOS, the Linux builds that --inspect runs inside its container.
+    libexec.install Dir["libexec/*"] if Dir.exist?("libexec")
   end
 
   test do

@@ -56,6 +56,9 @@ jobs:
 
   macos:
     name: macOS universal
+    # The macOS archive carries the Linux builds too: `--inspect` runs one
+    # of them inside the container it makes.
+    needs: linux
     # macos-15: Apple silicon, from a pool that has machines to give (see ci.yml).
     runs-on: macos-15
     steps:
@@ -82,10 +85,21 @@ jobs:
           lipo -archs stage/ceynox-watch
       - name: Test the binary that ships
         run: CEYNOX_WATCH_BIN="$PWD/stage/ceynox-watch" dev/integration-macos.sh
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: "linux-*"
+          path: linux
+          merge-multiple: true
       - name: Package
         run: |
+          mkdir stage/libexec
+          for arch in x86_64 aarch64; do
+            tar -xzf "linux/ceynox-watch-$VERSION-linux-$arch.tar.gz" -O ceynox-watch > "stage/libexec/ceynox-watch-linux-$arch"
+            chmod 755 "stage/libexec/ceynox-watch-linux-$arch"
+            file "stage/libexec/ceynox-watch-linux-$arch" | grep -q "ELF 64-bit.*statically linked"
+          done
           cp LICENSE README.md stage/
-          tar -C stage -czf "out/ceynox-watch-$VERSION-macos-universal.tar.gz" ceynox-watch LICENSE README.md
+          tar -C stage -czf "out/ceynox-watch-$VERSION-macos-universal.tar.gz" ceynox-watch libexec LICENSE README.md
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: macos-universal

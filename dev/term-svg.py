@@ -4,7 +4,9 @@
     ceynox-watch --color always -- npm install 2> run.ansi
     dev/term-svg.py '$ ceynox-watch -- npm install' < run.ansi > docs/demo.svg
 
-Only the colors ceynox-watch uses are understood.
+A second argument is the picture's description for screen readers. Lines
+longer than WIDTH columns are cut and marked, as a narrow terminal would
+show them. Only the colors ceynox-watch uses are understood.
 """
 import re
 import sys
@@ -20,6 +22,19 @@ STYLES = {
     "36": ("fill", "#79c0ff"),
 }
 CHAR_W, LINE_H, PAD, BAR = 8.6, 19, 18, 34
+WIDTH = 112
+
+
+def crop(row):
+    """Cut a row of runs to WIDTH columns."""
+    out, room = [], WIDTH
+    for text, style in row:
+        if len(text) > room:
+            out.append((text[: max(room - 1, 0)] + "…", style))
+            return out
+        out.append((text, style))
+        room -= len(text)
+    return out
 
 
 def spans(line):
@@ -44,12 +59,14 @@ def main():
     lines = [l.rstrip("\n") for l in sys.stdin]
     if len(sys.argv) > 1:
         lines.insert(0, f"\x1b[32m{sys.argv[1][:1]}\x1b[0m{sys.argv[1][1:]}")
-    rows = [spans(l) for l in lines]
+    rows = [crop(spans(l)) for l in lines]
+    label = sys.argv[2] if len(sys.argv) > 2 else (
+        "ceynox-watch watching npm install: an install script reads AWS credentials and an SSH key")
     cols = max((sum(len(t) for t, _ in r) for r in rows), default=0)
     width = round(cols * CHAR_W + 2 * PAD)
     height = BAR + len(rows) * LINE_H + PAD
     print(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}" '
-          f'role="img" aria-label="ceynox-watch watching npm install: an install script reads AWS credentials and an SSH key">')
+          f'role="img" aria-label="{escape(label, {chr(34): "&quot;"})}">')
     print(f'<rect width="{width}" height="{height}" rx="10" fill="#0d1117"/>')
     for i, color in enumerate(("#ff5f57", "#febc2e", "#28c840")):
         print(f'<circle cx="{PAD + 4 + i * 20}" cy="{BAR / 2 + 1}" r="6" fill="{color}"/>')
