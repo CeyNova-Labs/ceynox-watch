@@ -96,7 +96,8 @@ jobs:
           for arch in x86_64 aarch64; do
             tar -xzf "linux/ceynox-watch-$VERSION-linux-$arch.tar.gz" -O ceynox-watch > "stage/libexec/ceynox-watch-linux-$arch"
             chmod 755 "stage/libexec/ceynox-watch-linux-$arch"
-            file "stage/libexec/ceynox-watch-linux-$arch" | grep -q "ELF 64-bit.*statically linked"
+            # Static, in either of the two ways the linker may say so.
+            file "stage/libexec/ceynox-watch-linux-$arch" | grep -Eq "ELF 64-bit.*(statically|static-pie) linked"
           done
           cp LICENSE README.md stage/
           tar -C stage -czf "out/ceynox-watch-$VERSION-macos-universal.tar.gz" ceynox-watch libexec LICENSE README.md

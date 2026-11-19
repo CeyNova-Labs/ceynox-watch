@@ -26,7 +26,7 @@ inputs:
     description: Directory to run the command in.
     default: ""
   version:
-    description: The ceynox-watch release to use, such as v0.2.0. Defaults to the version of this action.
+    description: The ceynox-watch release to use, such as v0.2.1. Defaults to the version of this action.
     default: ""
   binary:
     description: Path of a ceynox-watch binary to use instead of downloading a release.
