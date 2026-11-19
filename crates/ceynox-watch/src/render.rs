@@ -10,7 +10,7 @@ use std::{collections::HashMap, fmt::Write as _, net::IpAddr};
 use crate::{
     classify::Finding,
     event::{Peer, Proto},
-    report::{Exit, Line, LineKind, PeerRec, Report, Subject},
+    report::{Exit, Line, LineKind, NOTABLE_SENT, PeerRec, Report, Subject},
 };
 
 #[derive(Debug, Clone)]
@@ -70,6 +70,18 @@ fn thousands(n: usize) -> String {
         out.push(d);
     }
     out
+}
+
+/// A byte count for people: `812 B`, `4.2 kB`, `1.3 GB`.
+fn size(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "kB", "MB", "GB", "TB"];
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 999.95 && unit < UNITS.len() - 1 {
+        value /= 1000.0;
+        unit += 1;
+    }
+    if unit == 0 { format!("{bytes} B") } else { format!("{value:.1} {}", UNITS[unit]) }
 }
 
 fn duration(ms: u64) -> String {
@@ -191,6 +203,11 @@ pub fn live(report: &Report, line: &Line, start: u64, style: &Style, verbose: bo
                 None => format!("{}  {peer}{by}", style.paint(GREEN, "net  ")),
             }
         }
+        LineKind::Sent { peer, name, bytes } => {
+            let by = style.paint(DIM, &format!("  {}", who(report, line.proc?)));
+            let to = show_peer(peer, name.as_deref());
+            format!("{}  {} to {to}{by}", style.paint(YELLOW, "sent "), style.paint(BOLD, &size(*bytes)))
+        }
         LineKind::File { path, write, finding } => {
             let by = style.paint(DIM, &format!("  {}", who(report, line.proc?)));
             let path = show_path(report, style, path);
@@ -252,6 +269,12 @@ fn peer_line(report: &Report, style: &Style, rec: &PeerRec) -> String {
     let by: Vec<String> = rec.by.iter().map(|n| clean(n)).collect();
     let pkg = report.package(rec.first_by).map(|p| format!(" [{}]", clean(&p))).unwrap_or_default();
     let mut line = format!("   {}{}", show_peer(&rec.peer, rec.name.as_deref()), style.paint(DIM, &times));
+    if rec.closed > 0 {
+        // A large upload is worth the eye; the rest is context.
+        let up = format!("↑{}", size(rec.sent));
+        let up = if rec.sent >= NOTABLE_SENT { style.paint(YELLOW, &up) } else { up };
+        let _ = write!(line, "  {up} ↓{}", size(rec.received));
+    }
     if let Some(f) = &rec.finding {
         let _ = write!(line, "  {}", flag(style, f));
     }
@@ -344,7 +367,7 @@ pub fn summary(report: &Report, header: &Header, style: &Style) -> String {
             let (verb, subject) = match &f.subject {
                 Subject::File { path, write: false } => ("read ", show_path(report, style, path)),
                 Subject::File { path, write: true } => ("wrote", show_path(report, style, path)),
-                Subject::Peer(peer) => ("net  ", show_peer(peer, None)),
+                Subject::Peer(peer) => ("net  ", show_peer(peer, report.peer_name(peer))),
             };
             let head = format!("   {}  {subject}  {}", style.paint(RED, verb), flag(style, &f.finding));
             let chain: Vec<String> = report.ancestry(f.proc).take(5).map(|p| fit(&clean(&p.command()), 48)).collect();
@@ -414,6 +437,15 @@ mod tests {
         assert_eq!(duration(14_230), "14.2s");
         assert_eq!(duration(125_000), "2m05s");
         assert_eq!(fit("abcdef", 4), "abc…");
+        assert_eq!(size(0), "0 B");
+        assert_eq!(size(812), "812 B");
+        assert_eq!(size(999), "999 B");
+        assert_eq!(size(1000), "1.0 kB");
+        assert_eq!(size(4_200), "4.2 kB");
+        assert_eq!(size(999_949), "999.9 kB");
+        assert_eq!(size(999_950), "1.0 MB");
+        assert_eq!(size(4_200_000), "4.2 MB");
+        assert_eq!(size(1_300_000_000), "1.3 GB");
         assert_eq!(fit("abc", 4), "abc");
     }
 

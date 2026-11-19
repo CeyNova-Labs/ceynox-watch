@@ -11,7 +11,9 @@
 //! | `on_connect` | fentry `security_socket_connect`     | `Sock` (connect)  |
 //! | `on_send`  | fentry `security_socket_sendmsg`       | `Sock` (datagram) |
 //!
-//! A seventh, `dns_replies`, is a socket filter. The loader attaches it to a
+//! | `on_close` | fentry `tcp_close`                    | `Closed`          |
+//!
+//! Another, `dns_replies`, is a socket filter. The loader attaches it to a
 //! packet socket of its own, where it selects DNS replies so that addresses
 //! can be shown with the names they were looked up by. A socket filter only
 //! decides what that one socket receives; it cannot touch the traffic.
@@ -49,9 +51,9 @@ use aya_ebpf::{
     programs::{BtfTracePointContext, FEntryContext, SkBuffContext},
 };
 use ceynox_watch_common::{
-    ARGV_CAP, COMM_LEN, Config, Exec, Exit, Fork, Head, KIND_CONNECT, KIND_EXEC, KIND_EXIT, KIND_FORK, KIND_OPEN,
-    KIND_SEND, LOST_FILE, LOST_NET, LOST_PROC, LOST_SLOTS, Offsets, Open, PATH_CAP, Sock, UNIX_PATH_CAP,
-    WATCHER_HOST_PID, WATCHER_LEVEL, WATCHER_NS, WATCHER_READY, Watcher,
+    ARGV_CAP, COMM_LEN, Closed, Config, Conn, Exec, Exit, Fork, Head, KIND_CLOSE, KIND_CONNECT, KIND_EXEC, KIND_EXIT,
+    KIND_FORK, KIND_OPEN, KIND_SEND, LOST_FILE, LOST_NET, LOST_PROC, LOST_SLOTS, Offsets, Open, PATH_CAP, RCV_SHUTDOWN,
+    SEND_SHUTDOWN, Sock, UNIX_PATH_CAP, WATCHER_HOST_PID, WATCHER_LEVEL, WATCHER_NS, WATCHER_READY, Watcher,
 };
 
 // ---- maps and load-time settings --------------------------------------------
@@ -93,6 +95,13 @@ static OPEN_BUF: PerCpuArray<Open> = PerCpuArray::with_max_entries(1, 0);
 /// packets to one destination is one record per window, not one per packet.
 #[map]
 static SENT: LruHashMap<Peer, u64> = LruHashMap::with_max_entries(16384, 0);
+
+/// Open TCP connections of watched processes, by kernel socket address, so
+/// that `on_close` can say whose connection ended and where it went. Least
+/// recently used entries give way, so a socket that is never closed cannot
+/// fill the table.
+#[map]
+static CONNS: LruHashMap<u64, Conn> = LruHashMap::with_max_entries(16384, 0);
 
 /// Written by the loader before the programs are loaded.
 #[unsafe(no_mangle)]
@@ -552,6 +561,68 @@ pub fn on_connect(ctx: FEntryContext) -> i32 {
         && let Some(d) = inet_dest(sa, family)
     {
         emit_sock(KIND_CONNECT, pid, sock_type, &d, None);
+        // Remember it, to report how much was transferred when it closes.
+        let sk = kread::<u64>(sock, o.socket_sk).unwrap_or(0);
+        if sk != 0 && o.tcp_bytes_acked != 0 {
+            let conn = Conn { pid, family: d.family, port: d.port, addr: d.addr };
+            let _ = CONNS.insert(&sk, &conn, 0);
+        }
+    }
+    0
+}
+
+/// `void tcp_close(struct sock *sk, long timeout)`: a TCP socket is being
+/// closed, by its owner or by the kernel on the owner's exit.
+///
+/// Only sockets remembered by `on_connect` are reported, so this costs
+/// unwatched processes one failed map lookup.
+#[fentry(function = "tcp_close")]
+pub fn on_close(ctx: FEntryContext) -> i32 {
+    let sk: *const u8 = ctx.arg(0);
+    let key = sk as u64;
+    // SAFETY: the value is plain data, copied out before the entry goes.
+    let Some(conn) = (unsafe { CONNS.get(&key) }).copied() else {
+        return 0;
+    };
+    let _ = CONNS.remove(&key);
+
+    let cfg = CONFIG.load();
+    let o = &cfg.off;
+    // A `struct sock` of a TCP socket is the start of its `struct tcp_sock`.
+    let sent = kread::<u64>(sk, o.tcp_bytes_acked).unwrap_or(0);
+    let received = kread::<u64>(sk, o.tcp_bytes_received).unwrap_or(0);
+    if sent == 0 && received == 0 {
+        return 0; // never carried anything: refused, or abandoned
+    }
+    // Both counters include the handshake markers. Say which ones have been
+    // counted, so the loader can take them off again.
+    let mut shutdown = 0u8;
+    let mut fin_acked = 0u8;
+    if o.sk_shutdown != 0 {
+        shutdown = kread::<u8>(sk, o.sk_shutdown).unwrap_or(0) & (RCV_SHUTDOWN | SEND_SHUTDOWN);
+        if shutdown & SEND_SHUTDOWN != 0 && o.tcp_snd_una != 0 && o.tcp_write_seq != 0 {
+            // Everything queued, the end-of-data marker included, is acked.
+            let acked = kread::<u32>(sk, o.tcp_snd_una);
+            let queued = kread::<u32>(sk, o.tcp_write_seq);
+            fin_acked = (acked.is_some() && acked == queued) as u8;
+        }
+    }
+    match EVENTS.reserve::<Closed>(0) {
+        Some(mut slot) => {
+            slot.write(Closed {
+                head: head(KIND_CLOSE, conn.pid),
+                family: conn.family,
+                port: conn.port,
+                shutdown,
+                fin_acked,
+                _pad: 0,
+                addr: conn.addr,
+                sent,
+                received,
+            });
+            slot.submit(0);
+        }
+        None => lost(LOST_NET),
     }
     0
 }

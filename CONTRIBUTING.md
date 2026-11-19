@@ -2,6 +2,12 @@
 
 Bug reports, catalog additions and patches are welcome.
 
+## What belongs here
+
+ceynox-watch observes one machine, when asked, and reports what it saw. Changes that make it see more, show it better, or flag more of it from a fixed list are in scope.
+
+Out of scope, however well made: anything that blocks, stops, quarantines or otherwise acts on what it sees; anything that plants bait such as decoy files or fake credentials; anything that judges with a model instead of a list a person can read; and anything that collects results from many machines. Those are a different kind of tool. Saying so here means a "no" to such a change is about scope, not about the idea.
+
 ## Layout
 
 | Path | What |
@@ -40,11 +46,12 @@ The end-to-end tests run real commands (a shell, `curl`, `npm install`) under ce
 
 ## Adding to the catalog
 
-Locations worth flagging live in one table, `RULES` in `crates/ceynox-watch/src/classify.rs`. Add a line, and a line to the tests below it. Keep in mind:
+Locations worth flagging live in one table, `RULES` in `crates/ceynox-watch/src/classify.rs`. Hosts worth flagging live in another, `HOSTS`, in the same file. Add a line, and a line to the tests below it. Keep in mind:
 
 - The first matching rule wins, so put exceptions (`skip`) before the rule they carve out of.
 - Flag where secrets are, not where they might be. A rule that fires on every run of a common tool teaches people to stop reading.
 - Use `Write` for locations that only matter when changed, such as startup files.
+- A host belongs in `HOSTS` only if its main use is to receive arbitrary data from anyone. A general-purpose site that can also be misused does not.
 
 ## Rules for the code
 

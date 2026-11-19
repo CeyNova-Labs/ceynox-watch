@@ -59,6 +59,14 @@ pub enum What {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         name: Option<String>,
     },
+    /// A TCP connection reported earlier by `connect` has closed. Linux only.
+    Close {
+        peer: Peer,
+        /// Bytes of data sent to the peer.
+        sent: u64,
+        /// Bytes of data received from it.
+        received: u64,
+    },
     /// The sensor could not keep up and this many events were dropped.
     Lost { count: u64 },
 }

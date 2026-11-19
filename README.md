@@ -90,6 +90,13 @@ Opens and connections are checked against a catalog of places that matter, in [`
 - **History**: shell and REPL history.
 - **Persistence**: writes to shell startup files, `authorized_keys`, Git hooks, autostart entries, systemd units, cron, launch agents.
 - **Control**: the cloud metadata service, the container runtime socket, the SSH and GPG agents.
+- **Drop-off points**: hosts that stolen data is often sent to, recognised by name. Paste sites, file drops, chat webhooks, request catchers, tunnelling services and dynamic DNS hosts. They all have ordinary uses; a package install rarely has one.
+
+On Linux the summary also says how much went each way over every TCP connection, and a connection that carried more than 100 kB out gets a line of its own as it closes:
+
+```
+   2.118s  sent   4.2 MB to 203.0.113.9:443  tcp, https  node [npm:some-package]
+```
 
 Listing one of the folders secrets live in (`~/.ssh`, `~/.aws`, `~/.gnupg` and so on) is flagged too: looking around comes before taking.
 
@@ -106,6 +113,7 @@ The catalog is one table of patterns. Adding a location is a one-line change, an
 | Files read | all | those in catalog locations (`-v` for all) |
 | Files written | all | all |
 | Network | address, port, protocol and host name | port only; with `--hosts`, address, protocol and host name (uses `sudo`) |
+| Data sent and received per connection | yes, for TCP | no |
 | Processes ending | yes | no |
 | Programs that sandbox themselves | work | fail to start their sandbox |
 
@@ -198,6 +206,7 @@ Worth knowing before you rely on it:
 - **It is a record, not a sandbox.** By the time you read that a key was opened, it was opened. Run untrusted code in a disposable environment if the outcome matters.
 - **It reports opens, not bytes.** A file that was opened counts as read even if nothing was read from it, and you see where a connection went, not what was sent.
 - **Work done by someone else is not followed.** If a watched process asks an already-running service to act for it (the Docker daemon, `systemd-run`, an SSH agent), you see the request being made, since the socket connection is reported, but not what the service then does.
+- **Amounts are for TCP, counted when a connection closes.** Datagrams, which includes QUIC and so HTTP/3, are not measured, and a connection still open when watching stops is not in the totals.
 - **Names are best effort.** On Linux they come from plain DNS over UDP: a process using DNS over HTTPS, or an address hard-coded in the program, shows as an address only. On macOS with `--hosts` they also come from the TLS handshake, which covers cached lookups but not QUIC or a handshake split across packets. When two names share an address, the most recent one wins.
 - **A process running as root can interfere** with any tracing tool, this one included. ceynox-watch is built to tell you what ordinary untrusted code does, not to withstand an attacker who already owns the machine.
 - **Under extreme load events can be dropped.** When that happens the output says so and says how many; it never fails silently. `--buffer-mb` raises the limit.
@@ -214,7 +223,7 @@ Worth knowing before you rely on it:
 {"ts":1795011840260,"pid":4211,"type":"exit","code":0}
 ```
 
-Event types are `fork`, `exec`, `open` (with `"write":true` when opened for writing, `"dir":true` for directories), `connect` (peer is `ip` or `unix`), `exit` (with `code` or `signal`) and `lost`. `ts` is milliseconds since the Unix epoch. The format may still change before 1.0.
+Event types are `fork`, `exec`, `open` (with `"write":true` when opened for writing, `"dir":true` for directories), `connect` (peer is `ip` or `unix`), `close` (a TCP connection ended, with the bytes of data `sent` and `received`; Linux only), `exit` (with `code` or `signal`) and `lost`. `ts` is milliseconds since the Unix epoch. The format may still change before 1.0.
 
 ## Development
 
