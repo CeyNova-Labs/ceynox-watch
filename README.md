@@ -33,6 +33,7 @@
   <a href="#in-ci">CI</a> ·
   <a href="#share-a-run">Report</a> ·
   <a href="#what-is-flagged">What is flagged</a> ·
+  <a href="#how-it-compares">Compared</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#limits">Limits</a> ·
   <a href="#maturity">Maturity</a>
@@ -58,6 +59,12 @@ ceynox-watch shows; it does not block, and it does not decide what is malicious.
 
 > [!NOTE]
 > **Status: early.** It runs on Linux and macOS. The two work differently and macOS sees less; [Platforms](#platforms) has the comparison. [Maturity](#maturity) says plainly how new it is and how it was built.
+
+## Why it exists
+
+Installing a package runs its code, and so does letting an AI agent work in your repository. The tools to see what that code does have existed for years, and almost nobody uses them for this, because the answer is buried in thousands of lines of system calls and takes an expert to dig out.
+
+ceynox-watch does not trace anything that could not be traced before. It makes the check cheap enough to actually do: one command in front of another, and an answer in the terms the question was asked in. Which package's code read your credentials, where it connected, and whether any of that is different from last time.
 
 ## What you can do with it
 
@@ -232,6 +239,34 @@ On Linux the summary also says how much went each way over every TCP connection,
 Listing one of the folders secrets live in (`~/.ssh`, `~/.aws`, `~/.gnupg` and so on) is flagged too: looking around comes before taking.
 
 The catalog is one table of patterns. Adding a location is a one-line change, and additions are welcome.
+
+## How it compares
+
+None of the mechanisms here are new. Tracing a command is what `strace` has done for decades, and eBPF tools that watch processes, files and sockets are well established. If one of the tools below already answers your question, use it.
+
+What ceynox-watch adds is what you would otherwise build on top of them:
+
+- **Attribution to a package.** Not "process 4211 opened a file" but "the install script of this package did". Tracing tools do not know what a package is.
+- **Knowing what matters.** A catalog of credential, browser, history and startup locations, so that the few lines worth reading are not lost among thousands.
+- **A comparison with last time,** as a short list and, in CI, a failing check.
+- **Somewhere safe to try a package first,** with `--inspect`.
+- **macOS, without root and without installing anything.**
+- **No setup.** No policy to write, no daemon, no cluster.
+
+An expert with `strace` and a script can do most of this, and does not need ceynox-watch. It is for everyone who is not going to.
+
+| Tool | What it is, in its own words | Reach for it instead when |
+|---|---|---|
+| [strace](https://strace.io) | "intercepts and records the system calls made by a process" | you want every system call and its arguments, from a tool every distribution packages. It is the more complete record. |
+| [bpftrace](https://github.com/bpftrace/bpftrace) | "a general purpose tracing tool and language for Linux" | you have a question of your own to ask the kernel and are happy to write the program that asks it. |
+| [Tetragon](https://tetragon.io) | "realtime, eBPF-based Security Observability and Runtime Enforcement" | you need something running all the time across hosts or a cluster, with policies, and able to act. |
+| [Falco](https://falco.org) | "designed to detect and alert on abnormal behavior and potential security threats in real-time" | you want rule-based alerts from hosts, containers and Kubernetes, fed into your monitoring. |
+| [Tracee](https://github.com/aquasecurity/tracee) | "a runtime security and observability tool" that uses eBPF | you want a continuous stream of detailed runtime events to investigate. |
+| [Harden-Runner](https://github.com/step-security/harden-runner) | for GitHub Actions jobs: "Each outbound network connection, file operation, and process execution is mapped" | your concern is GitHub Actions. It overlaps most with our Action: it also builds a baseline of a job's outbound calls and flags what is new. It goes further than we do by blocking traffic outside an allow-list, and it shows results on StepSecurity's site, where ours writes files into the job. |
+| [OpenSSF Package Analysis](https://github.com/ossf/package-analysis) | "analyses the capabilities of packages available on open source repositories" | you want a stronger sandbox than `--inspect` gives. It runs packages in gVisor; ours shares your kernel. |
+| [Socket Firewall](https://docs.socket.dev/docs/socket-firewall-free) | "blocks confirmed malware that has been verified through human review" | you want known-bad packages stopped before they install. It works from what is already known; ceynox-watch shows what happened, known or not. The two go together. |
+
+The closest comparison is `strace -f`. [docs/comparison.md](docs/comparison.md) has it measured: timings, and three things the two do differently, each tested on a real kernel. In short, speed is not the difference (strace in its fastest mode is as quick), and what differs is `io_uring`, commands that use `sudo`, and how much of a record you get.
 
 ## Platforms
 

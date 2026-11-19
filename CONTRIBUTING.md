@@ -49,6 +49,8 @@ cargo fmt --all --check
 
 A change to one of the parsers of untrusted input (`sensor/dns.rs`, `sensor/pktap.rs`, `sensor/btf.rs`) should survive its fuzz target for a while: `cargo install cargo-fuzz`, then `cargo +nightly fuzz run dns` (or `btf`, `capture`) from the repository root. CI runs each for under a minute.
 
+`dev/run.sh dev/bench.sh` times a real `npm ci` on its own, under strace and under ceynox-watch. The numbers in `docs/comparison.md` come from it; a change that could affect overhead should be measured with it, and that page updated if they move.
+
 The end-to-end tests run real commands (a shell, `curl`, `npm install`) under ceynox-watch on the container's kernel and check what is reported. A change to the kernel programs or the loader should come with a case there.
 
 ## Adding to the catalog
