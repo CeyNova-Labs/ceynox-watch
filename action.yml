@@ -37,8 +37,7 @@ outputs:
     description: >-
       Path of the Markdown report, which is also added to the job summary.
       Each output is also set as an environment variable for later steps
-      (CEYNOX_WATCH_REPORT, CEYNOX_WATCH_RECORDING, CEYNOX_WATCH_BASELINE),
-      which is the way to reach them after this step has failed.
+      (CEYNOX_WATCH_REPORT, CEYNOX_WATCH_RECORDING, CEYNOX_WATCH_BASELINE).
     value: ${{ steps.watch.outputs.report }}
   recording:
     description: Path of the full recording, for `ceynox-watch --view`.
@@ -99,8 +98,7 @@ runs:
         INPUT_WORKDIR: ${{ inputs.working-directory }}
       run: |
         set -uo pipefail
-        out="$RUNNER_TEMP/ceynox-watch-$GITHUB_RUN_ID-$GITHUB_ACTION"
-        mkdir -p "$out"
+        out="$(mktemp -d "$RUNNER_TEMP/ceynox-watch-XXXXXX")"
         args=(--color always --report "$out/report.md" --json "$out/recording.jsonl" --write-baseline "$out/baseline.json")
         fail_on="$INPUT_FAIL_ON"
         if [ -n "$INPUT_BASELINE" ]; then
@@ -116,8 +114,10 @@ runs:
         [ -n "$fail_on" ] && args+=(--fail-on "$fail_on")
         [ -n "$INPUT_WORKDIR" ] && cd "$INPUT_WORKDIR"
 
-        ceynox-watch "${args[@]}" -- bash -eo pipefail -c "$INPUT_RUN"
-        status=$?
+        # The shell this runs in stops at the first failure, and a failing
+        # run is exactly when the report below is wanted.
+        status=0
+        ceynox-watch "${args[@]}" -- bash -eo pipefail -c "$INPUT_RUN" || status=$?
 
         [ -f "$out/report.md" ] && cat "$out/report.md" >> "$GITHUB_STEP_SUMMARY"
         {
@@ -125,8 +125,8 @@ runs:
           echo "recording=$out/recording.jsonl"
           echo "baseline=$out/baseline.json"
         } >> "$GITHUB_OUTPUT"
-        # The same for later steps as environment variables, which are
-        # still there when this step has failed and its outputs are not.
+        # The same for later steps as environment variables, which do not
+        # depend on this step having succeeded.
         {
           echo "CEYNOX_WATCH_REPORT=$out/report.md"
           echo "CEYNOX_WATCH_RECORDING=$out/recording.jsonl"
