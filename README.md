@@ -164,19 +164,20 @@ Requirements to run: Linux 5.11 or newer on x86-64, 6.0 or newer on arm64, with 
 
 ### Linux
 
-Six small eBPF programs, written in Rust, observe the kernel:
+Seven small eBPF programs, written in Rust, observe the kernel:
 
 | What | Where |
 |---|---|
 | process start, exec, exit | `sched_process_fork`, `sched_process_exec`, `sched_process_exit` |
 | file opens | `security_file_open` |
 | connections and datagrams | `security_socket_connect`, `security_socket_sendmsg` |
+| how much a connection carried | `tcp_close` |
 
 File and network activity is hooked at the kernel's security layer, not at system-call entry. Every way of opening a file passes through it (`open`, `openat2`, `io_uring`, the kernel loading a program for `execve`), and the kernel supplies the path it resolved. A relative path, a symlink, or a path swapped after the check cannot hide the real target.
 
 Which processes are reported is decided in the kernel. Watching a command means watching its process and everything descended from it; nothing about any other process leaves the kernel. Process ids are translated to the pid namespace ceynox-watch runs in, so it works inside containers and sees into containers from the host.
 
-Host names come from DNS replies read off a packet socket that a seventh program narrows to UDP from port 53. An address is shown with the name it was last looked up by.
+Host names come from DNS replies read off a packet socket that an eighth program narrows to UDP from port 53. An address is shown with the name it was last looked up by.
 
 The programs only observe. They attach to tracing hooks, which cannot change what the kernel does, and they write only to their own maps.
 
@@ -204,7 +205,7 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 Worth knowing before you rely on it:
 
 - **It is a record, not a sandbox.** By the time you read that a key was opened, it was opened. Run untrusted code in a disposable environment if the outcome matters.
-- **It reports opens, not bytes.** A file that was opened counts as read even if nothing was read from it, and you see where a connection went, not what was sent.
+- **It reports opens, not contents.** A file that was opened counts as read even if nothing was read from it, and you see where a connection went and, on Linux, how much it carried, never what was in it.
 - **Work done by someone else is not followed.** If a watched process asks an already-running service to act for it (the Docker daemon, `systemd-run`, an SSH agent), you see the request being made, since the socket connection is reported, but not what the service then does.
 - **Amounts are for TCP, counted when a connection closes.** Datagrams, which includes QUIC and so HTTP/3, are not measured, and a connection still open when watching stops is not in the totals.
 - **Names are best effort.** On Linux they come from plain DNS over UDP: a process using DNS over HTTPS, or an address hard-coded in the program, shows as an address only. On macOS with `--hosts` they also come from the TLS handshake, which covers cached lookups but not QUIC or a handshake split across packets. When two names share an address, the most recent one wins.
