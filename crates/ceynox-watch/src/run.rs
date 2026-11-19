@@ -63,6 +63,9 @@ pub const UNWELCOME: i32 = 3;
 /// Tells the stand-in which user to become before it becomes the command.
 /// Used when installing a package in a container, where we start as root.
 pub const AS_ENV: &str = "CEYNOX_WATCH_AS";
+/// What to call the run in the summary, in place of the command line.
+/// Set for the watcher inside a container, whose command line is ours.
+pub const TITLE_ENV: &str = "CEYNOX_WATCH_TITLE";
 
 const GATE_ENV: &str = "CEYNOX_WATCH_GATE";
 const GO: &[u8] = b"go";
@@ -164,7 +167,7 @@ pub fn exec_main(command: Vec<OsString>) -> i32 {
         }
     }
     let mut cmd = Command::new(&command[0]);
-    cmd.args(&command[1..]).env_remove(GATE_ENV).env_remove(AS_ENV);
+    cmd.args(&command[1..]).env_remove(GATE_ENV).env_remove(AS_ENV).env_remove(TITLE_ENV);
     if let Some(who) = std::env::var_os(AS_ENV) {
         let ids =
             who.to_str().and_then(|w| w.split_once(':')).and_then(|(u, g)| Some((u.parse().ok()?, g.parse().ok()?)));
@@ -821,7 +824,10 @@ pub fn run_command(command: Vec<OsString>, opts: Options) -> i32 {
         say(crate::sensor::macos::NESTED);
     }
     if armed {
-        let title = command.iter().map(|a| a.to_string_lossy()).collect::<Vec<_>>().join(" ");
+        let title = std::env::var(TITLE_ENV)
+            .ok()
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| command.iter().map(|a| a.to_string_lossy()).collect::<Vec<_>>().join(" "));
         return session.conclude(&Header { title, elapsed_ms, exit }, code, true);
     }
     session.screen.finish();

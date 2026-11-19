@@ -393,7 +393,7 @@ pub fn summary(report: &Report, header: &Header, style: &Style) -> String {
 
     // Network.
     let mut peers: Vec<&PeerRec> = report.peers.iter().filter(|p| !p.background).collect();
-    let _ = writeln!(out, "\n {}  {} destinations", style.paint(BOLD, "NETWORK"), peers.len());
+    let _ = writeln!(out, "\n {}  {}", style.paint(BOLD, "NETWORK"), count(peers.len(), "destination"));
     peers.sort_by_key(|p| p.finding.is_none());
     for rec in peers.iter().take(25) {
         let _ = writeln!(out, "{}", peer_line(report, style, rec));
@@ -577,7 +577,7 @@ mod tests {
             " npm install  1.5s  exit 0",
             " PROCESSES  2 started, 2 programs run",
             "   node  npm",
-            " NETWORK  1 destinations",
+            " NETWORK  1 destination",
             "   updates.example.net:443 (203.0.113.9)  tcp, https  node [npm:evil]",
             " FILES  2 read, 1 written",
             "   written  ./node_modules (1)",
