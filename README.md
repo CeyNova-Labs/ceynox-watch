@@ -38,12 +38,18 @@ Put it in front of `pip install`, `npm install`, a build script, or an AI coding
 
 That is real, unedited output, from Linux. The package is [`demo/sneaky-pip`](demo/sneaky-pip), a harmless stand-in for one whose setup script goes looking for credentials. `pip` said nothing about it, even without `-q`: installing a package runs its code, and that code opened an AWS credentials file and an SSH key and made a connection. You can try it yourself; see [`demo/`](demo).
 
+```sh
+brew install ceynova-labs/tap/ceynox-watch
+ceynox-watch -- npm install
+```
+
 > **ceynox-watch shows you what happened. [CeyNox Security](https://ceynovahq.com) stops it.**
 > ceynox-watch is the free, open-source viewer from the team that builds CeyNox Security, AI-native endpoint security for Windows, Linux and macOS. [More below.](#ceynox-security)
 
 ceynox-watch shows; it does not block, and it does not decide what is malicious. `npm` reading `~/.npmrc` is `npm` doing its job, and it is listed all the same. What you get is the record, with the process that did each thing and how that process came to run.
 
-**Status: early.** It runs on Linux and macOS. The two work differently and macOS sees less; [Platforms](#platforms) has the comparison.
+> [!NOTE]
+> **Status: early.** It runs on Linux and macOS. The two work differently and macOS sees less; [Platforms](#platforms) has the comparison.
 
 ## Usage
 
@@ -85,12 +91,14 @@ Run it as yourself. On Linux, watching needs root, so it asks `sudo` for that pa
 
 Opens and connections are checked against a catalog of places that matter, in [`classify.rs`](crates/ceynox-watch/src/classify.rs):
 
-- **Credentials**: SSH keys, cloud credentials (AWS, Google Cloud, Azure, Kubernetes, Docker and others), package registry tokens, Git and GitHub credentials, AI tool tokens, password stores, wallets, `.env` files, mounted secrets, another process's environment.
-- **Browser data**: saved logins, cookies and extension storage.
-- **History**: shell and REPL history.
-- **Persistence**: writes to shell startup files, `authorized_keys`, Git hooks, autostart entries, systemd units, cron, launch agents.
-- **Control**: the cloud metadata service, the container runtime socket, the SSH and GPG agents.
-- **Drop-off points**: hosts that stolen data is often sent to, recognised by name. Paste sites, file drops, chat webhooks, request catchers, tunnelling services and dynamic DNS hosts. They all have ordinary uses; a package install rarely has one.
+| Flagged | What it covers |
+|---|---|
+| **Credentials** | SSH keys, cloud credentials (AWS, Google Cloud, Azure, Kubernetes, Docker and others), package registry tokens, Git and GitHub credentials, AI tool tokens, password stores, wallets, `.env` files, mounted secrets, another process's environment |
+| **Browser data** | saved logins, cookies and extension storage |
+| **History** | shell and REPL history |
+| **Persistence** | writes to shell startup files, `authorized_keys`, Git hooks, autostart entries, systemd units, cron, launch agents |
+| **Control** | the cloud metadata service, the container runtime socket, the SSH and GPG agents |
+| **Drop-off points** | hosts that stolen data is often sent to, recognised by name: paste sites, file drops, chat webhooks, request catchers, tunnelling services and dynamic DNS hosts. They all have ordinary uses; a package install rarely has one |
 
 On Linux the summary also says how much went each way over every TCP connection, and a connection that carried more than 100 kB out gets a line of its own as it closes:
 
@@ -117,7 +125,8 @@ The catalog is one table of patterns. Adding a location is a one-line change, an
 | Processes ending | yes | no |
 | Programs that sandbox themselves | work | fail to start their sandbox |
 
-The last row matters. macOS does not allow a sandbox inside a sandbox, so a program that sandboxes itself or its children will find that it cannot while it runs under ceynox-watch. Browsers do this, and so do AI coding agents that sandbox the commands they run. For the same reason ceynox-watch cannot be started from inside such a sandbox, and says so if you try.
+> [!IMPORTANT]
+> The last row matters. macOS does not allow a sandbox inside a sandbox, so a program that sandboxes itself or its children will find that it cannot while it runs under ceynox-watch. Browsers do this, and so do AI coding agents that sandbox the commands they run. For the same reason ceynox-watch cannot be started from inside such a sandbox, and says so if you try.
 
 ## Install
 
@@ -137,7 +146,8 @@ xattr -d com.apple.quarantine ./ceynox-watch
 
 You do not have to take the binary on trust either way: the checksums are published with each release, the build is done in the open by the [release workflow](.github/workflows/release.yml), and you can build it yourself from source.
 
-To build from source instead:
+<details>
+<summary><b>Build from source</b></summary>
 
 **macOS**, with a [Rust toolchain](https://rustup.rs):
 
@@ -158,11 +168,26 @@ docker build -t ceynox-watch-dev dev/
 dev/run.sh cargo build --release
 ```
 
+</details>
+
 Requirements to run: Linux 5.11 or newer on x86-64, 6.0 or newer on arm64, with BTF type information (`/sys/kernel/btf/vmlinux` exists). Every mainstream distribution of the last few years qualifies.
 
 ## How it works
 
 ### Linux
+
+```mermaid
+flowchart LR
+    cmd["your command<br>and everything it starts"]
+    subgraph kernel["Linux kernel"]
+        hooks["eBPF programs<br>on tracing hooks"] --> ring[("ring buffer")]
+    end
+    helper["helper<br>root given up, CAP_BPF only"]
+    cw["ceynox-watch<br>running as you"]
+    out["live lines, summary, JSON"]
+    cmd -. observed .-> hooks
+    ring --> helper --> cw --> out
+```
 
 Seven small eBPF programs, written in Rust, observe the kernel:
 
@@ -182,6 +207,16 @@ Host names come from DNS replies read off a packet socket that an eighth program
 The programs only observe. They attach to tracing hooks, which cannot change what the kernel does, and they write only to their own maps.
 
 ### macOS
+
+```mermaid
+flowchart LR
+    cmd["your command<br>under sandbox-exec"]
+    sb["macOS sandbox<br>allows everything, reports"]
+    log[("system log")]
+    cw["ceynox-watch<br>running as you"]
+    out["live lines, summary, JSON"]
+    cmd -. observed .-> sb --> log -- "log stream" --> cw --> out
+```
 
 macOS ships a sandbox, and a sandbox profile can ask for a report of an operation without forbidding it. ceynox-watch starts your command with `sandbox-exec` under a profile that allows everything and reports program starts, forks, reads of catalog locations, writes and outgoing connections. The kernel writes the reports to the system log, and ceynox-watch reads them back with `log stream`, picking out its own by a tag unique to the run.
 
