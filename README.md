@@ -60,6 +60,12 @@ ceynox-watch shows; it does not block, and it does not decide what is malicious.
 > [!NOTE]
 > **Status: early.** It runs on Linux and macOS. The two work differently and macOS sees less; [Platforms](#platforms) has the comparison. [Maturity](#maturity) says plainly how new it is and how it was built.
 
+## Why it exists
+
+Installing a package runs its code, and so does letting an AI agent work in your repository. The tools to see what that code does have existed for years, and almost nobody uses them for this, because the answer is buried in thousands of lines of system calls and takes an expert to dig out.
+
+ceynox-watch does not trace anything that could not be traced before. It makes the check cheap enough to actually do: one command in front of another, and an answer in the terms the question was asked in. Which package's code read your credentials, where it connected, and whether any of that is different from last time.
+
 ## What you can do with it
 
 | | | |
@@ -236,7 +242,18 @@ The catalog is one table of patterns. Adding a location is a one-line change, an
 
 ## How it compares
 
-None of the mechanisms here are new. Tracing a command is what `strace` has done for decades, and eBPF tools that watch processes, files and sockets are well established. What ceynox-watch adds is the packaging around one question, "what did this command just do, and for which package?": no setup, one summary, a catalog of locations that matter, and a comparison with last time. If one of the tools below already answers that for you, use it.
+None of the mechanisms here are new. Tracing a command is what `strace` has done for decades, and eBPF tools that watch processes, files and sockets are well established. If one of the tools below already answers your question, use it.
+
+What ceynox-watch adds is what you would otherwise build on top of them:
+
+- **Attribution to a package.** Not "process 4211 opened a file" but "the install script of this package did". Tracing tools do not know what a package is.
+- **Knowing what matters.** A catalog of credential, browser, history and startup locations, so that the three lines worth reading are not lost among eight thousand.
+- **A comparison with last time,** as a short list and, in CI, a failing check.
+- **Somewhere safe to try a package first,** with `--inspect`.
+- **macOS, without root and without installing anything.**
+- **No setup.** No policy to write, no daemon, no cluster.
+
+An expert with `strace` and a script can do all of this, and does not need ceynox-watch. It is for everyone who is not going to.
 
 | Tool | What it is, in its own words | Reach for it instead when |
 |---|---|---|
