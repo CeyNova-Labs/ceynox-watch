@@ -99,6 +99,11 @@ pub struct PeerRec {
     /// Names of every program that talked to it.
     pub by: Vec<String>,
     pub finding: Option<Finding>,
+    /// Connections seen to close, and the data that went each way over
+    /// them. Stays zero where the sensor cannot measure it.
+    pub closed: u64,
+    pub sent: u64,
+    pub received: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -141,10 +146,20 @@ pub enum LineKind {
         write: bool,
         finding: Option<Finding>,
     },
+    /// A connection closed after carrying a noteworthy amount out.
+    Sent {
+        peer: Peer,
+        name: Option<String>,
+        bytes: u64,
+    },
     Lost {
         count: u64,
     },
 }
+
+/// A closed connection gets a line of its own from this much data sent.
+/// Below it, the amounts only appear in the summary.
+pub const NOTABLE_SENT: u64 = 100_000;
 
 #[derive(Debug)]
 pub struct Report {
@@ -310,7 +325,7 @@ impl Report {
             What::Connect { peer, name: host } => {
                 let i = self.proc_index(ev.pid);
                 let name = self.procs[i].name().to_string();
-                let finding = self.classifier.peer(peer);
+                let mut finding = self.classifier.peer(peer, host.as_deref());
                 let background = finding.is_none() && is_background(peer);
                 let first = match self.peer_index.get(peer) {
                     Some(&p) => {
@@ -318,6 +333,12 @@ impl Report {
                         rec.count += 1;
                         if rec.name.is_none() {
                             rec.name.clone_from(host);
+                        }
+                        // A name learned late can turn an ordinary peer
+                        // into a flagged one; an earlier finding stands.
+                        match rec.finding {
+                            Some(earlier) => finding = Some(earlier),
+                            None => rec.finding = finding,
                         }
                         if !rec.by.contains(&name) {
                             rec.by.push(name);
@@ -334,6 +355,9 @@ impl Report {
                             first_by: i,
                             by: vec![name],
                             finding,
+                            closed: 0,
+                            sent: 0,
+                            received: 0,
                         });
                         true
                     }
@@ -345,6 +369,20 @@ impl Report {
                         proc: Some(i),
                         kind: LineKind::Net { peer: peer.clone(), name: host.clone(), finding, background },
                     });
+                }
+            }
+            What::Close { peer, sent, received } => {
+                // Only connections whose start was seen are counted.
+                if let Some(&p) = self.peer_index.get(peer) {
+                    let i = self.proc_index(ev.pid);
+                    let rec = &mut self.peers[p];
+                    rec.closed += 1;
+                    rec.sent += sent;
+                    rec.received += received;
+                    if *sent >= NOTABLE_SENT {
+                        let kind = LineKind::Sent { peer: peer.clone(), name: rec.name.clone(), bytes: *sent };
+                        lines.push(Line { ts: ev.ts, proc: Some(i), kind });
+                    }
                 }
             }
             What::Lost { count } => {
@@ -365,6 +403,11 @@ impl Report {
         }
         self.findings.push(FindingRec { proc, finding, subject: subject.clone() });
         true
+    }
+
+    /// The host name a peer was looked up by, if it was seen.
+    pub fn peer_name(&self, peer: &Peer) -> Option<&str> {
+        self.peers.get(*self.peer_index.get(peer)?)?.name.as_deref()
     }
 
     /// Processes that started while watching.
@@ -587,6 +630,46 @@ mod tests {
         assert_eq!(r.peers[0].by, ["npm"]);
         assert_eq!(r.peers[1].by, ["node"]);
         assert_eq!(lines.iter().filter(|l| matches!(l.kind, LineKind::Net { .. })).count(), 2);
+    }
+
+    #[test]
+    fn transfers_are_added_up_per_peer() {
+        let mut r = report();
+        let peer = Peer::Ip { ip: "203.0.113.9".parse().expect("ip"), port: 443, proto: Proto::Tcp };
+        let close =
+            |ts, sent, received| Event { ts, pid: 10, what: What::Close { peer: peer.clone(), sent, received } };
+        r.ingest(&exec(0, 10, 1, &["curl"], "/"));
+        // A close for a connection whose start was not seen is ignored.
+        assert!(r.ingest(&close(1, 5_000_000, 0)).is_empty());
+        r.ingest(&tcp(2, 10, "203.0.113.9"));
+        assert!(r.ingest(&close(3, 900, 40_000)).is_empty(), "small uploads only show in the summary");
+        let lines = r.ingest(&close(4, 4_200_000, 300));
+        assert!(matches!(lines[0].kind, LineKind::Sent { bytes: 4_200_000, .. }));
+        let rec = &r.peers[0];
+        assert_eq!((rec.closed, rec.sent, rec.received), (2, 4_200_900, 40_300));
+    }
+
+    #[test]
+    fn a_name_learned_later_can_flag_a_peer() {
+        let mut r = report();
+        let peer = Peer::Ip { ip: "203.0.113.9".parse().expect("ip"), port: 443, proto: Proto::Tcp };
+        let connect = |ts, name: Option<&str>| Event {
+            ts,
+            pid: 10,
+            what: What::Connect { peer: peer.clone(), name: name.map(str::to_string) },
+        };
+        r.ingest(&exec(0, 10, 1, &["node"], "/"));
+        r.ingest(&connect(1, None));
+        assert!(r.findings.is_empty());
+        let lines = r.ingest(&connect(2, Some("abc.ngrok-free.app")));
+        assert_eq!(r.findings.len(), 1);
+        assert_eq!(r.findings[0].finding.what, "tunnelling service");
+        assert_eq!(r.peer_name(&peer), Some("abc.ngrok-free.app"));
+        assert!(matches!(&lines[0].kind, LineKind::Net { finding: Some(_), .. }));
+        // Seen again without a name: still one finding, still flagged.
+        r.ingest(&connect(3, None));
+        assert_eq!(r.findings.len(), 1);
+        assert!(r.peers[0].finding.is_some());
     }
 
     #[test]

@@ -93,6 +93,27 @@ echo "network, with names"
 as_dev "ceynox-watch --color never -- curl -s -m 10 -o /dev/null https://example.com" 2> "$T/n.err" || fail "curl"
 has "$T/n.err" "connection shown by name" "example.com:443 (" "tcp, https"
 
+echo "how much was sent"
+cat > "$T/sink.py" <<'PY'
+import socket
+s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(("127.0.0.1", 9911)); s.listen(4)
+while True:
+    c, _ = s.accept()
+    while c.recv(65536):
+        pass
+    c.sendall(b"x" * 1234); c.close()
+PY
+python3 "$T/sink.py" & sink=$!
+sleep 0.5
+as_dev "ceynox-watch --color never --json $T/up.jsonl -- python3 -c \"
+import socket
+s = socket.create_connection(('127.0.0.1', 9911)); s.sendall(b'a' * 300000); s.shutdown(socket.SHUT_WR)
+while s.recv(65536): pass
+s.close()\"" > /dev/null 2> "$T/up.err" || fail "upload"
+kill $sink 2>/dev/null || true
+has "$T/up.jsonl" "the byte counts are exact" '"type":"close"' '"sent":300000,"received":1234'
+has "$T/up.err" "a large upload gets a line and a total" "sent   300.0 kB to 127.0.0.1:9911" "↑300.0 kB ↓1.2 kB"
+
 echo "npm install with an install script"
 su dev -c "cd $H/app && ceynox-watch --color never --json $T/npm.jsonl -- npm install --no-audit --no-fund --install-links" > /dev/null 2> "$T/npm.err" || fail "npm install"
 has "$T/npm.err" "install script attributed to its package" "node collect.js  [npm:sneaky-package]"

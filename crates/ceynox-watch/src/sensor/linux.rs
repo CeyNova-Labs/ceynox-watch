@@ -133,6 +133,14 @@ impl Sensor {
             p.load(function, &kernel_btf).map_err(|e| attach_error(function, e))?;
             p.attach().map_err(|e| attach_error(function, e))?;
         }
+        // Transfer sizes are an extra. A kernel where this hook or the
+        // counters it reads are missing still gets everything else.
+        if offsets.tcp_bytes_acked != 0 {
+            let _ = program::<FEntry>(&mut ebpf, "on_close").and_then(|p| {
+                p.load("tcp_close", &kernel_btf).map_err(|e| attach_error("tcp_close", e))?;
+                p.attach().map_err(|e| attach_error("tcp_close", e)).map(|_| ())
+            });
+        }
 
         // Nothing is reported until the kernel side has seen us open a file
         // and learned which pid namespace we are in. Do that now.
@@ -416,6 +424,12 @@ fn resolve_offsets(raw: &[u8]) -> Result<wire::Offsets, SensorError> {
         sk_dport: common + at("sock_common", "skc_dport")?,
         sk_v6_daddr: common + at("sock_common", "skc_v6_daddr")?,
         msghdr_name: at("msghdr", "msg_name")?,
+        // Optional: without them, transfers are simply not reported.
+        tcp_bytes_acked: btf.field_offset("tcp_sock", "bytes_acked").unwrap_or(0),
+        tcp_bytes_received: btf.field_offset("tcp_sock", "bytes_received").unwrap_or(0),
+        sk_shutdown: btf.field_offset("sock", "sk_shutdown").unwrap_or(0),
+        tcp_snd_una: btf.field_offset("tcp_sock", "snd_una").unwrap_or(0),
+        tcp_write_seq: btf.field_offset("tcp_sock", "write_seq").unwrap_or(0),
     })
 }
 
@@ -461,6 +475,7 @@ fn decode(b: &[u8]) -> Option<(u32, u64, What)> {
         wire::KIND_EXEC => decode_exec(b, pid)?,
         wire::KIND_OPEN => decode_open(b)?,
         wire::KIND_CONNECT | wire::KIND_SEND => decode_sock(b)?,
+        wire::KIND_CLOSE => decode_closed(b)?,
         _ => return None,
     };
     Some((pid, ts, what))
@@ -499,6 +514,34 @@ fn decode_open(b: &[u8]) -> Option<What> {
         path,
         write: flags & (O_WRONLY | O_RDWR | O_CREAT | O_TRUNC | O_APPEND) != 0,
         dir: mode & S_IFMT == S_IFDIR,
+    })
+}
+
+fn decode_closed(b: &[u8]) -> Option<What> {
+    let family = u16_at(b, offset_of!(wire::Closed, family))?;
+    let port = u16_at(b, offset_of!(wire::Closed, port))?;
+    let addr_at = offset_of!(wire::Closed, addr);
+    let addr: [u8; 16] = b.get(addr_at..addr_at + 16)?.try_into().ok()?;
+    let ip = match family {
+        AF_INET => IpAddr::V4(Ipv4Addr::new(addr[0], addr[1], addr[2], addr[3])),
+        AF_INET6 => {
+            let v6 = Ipv6Addr::from(addr);
+            v6.to_ipv4_mapped().map_or(IpAddr::V6(v6), IpAddr::V4)
+        }
+        _ => return None,
+    };
+    // The kernel's counters include the handshake: one for opening the
+    // connection, and one for each side's end-of-data marker once counted.
+    // None of that is data.
+    let shutdown = *b.get(offset_of!(wire::Closed, shutdown))?;
+    let fin_acked = *b.get(offset_of!(wire::Closed, fin_acked))?;
+    let opening = 1;
+    let our_end = u64::from(fin_acked != 0);
+    let their_end = u64::from(shutdown & wire::RCV_SHUTDOWN != 0);
+    Some(What::Close {
+        peer: Peer::Ip { ip, port, proto: Proto::Tcp },
+        sent: u64_at(b, offset_of!(wire::Closed, sent))?.saturating_sub(opening + our_end),
+        received: u64_at(b, offset_of!(wire::Closed, received))?.saturating_sub(their_end),
     })
 }
 

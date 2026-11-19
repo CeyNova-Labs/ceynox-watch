@@ -25,6 +25,9 @@ pub enum Category {
     Persistence,
     /// A peer that can hand out credentials or control this machine.
     Control,
+    /// A service often used to carry data out: easy to post to, hard to
+    /// trace back. Each has ordinary uses too.
+    Dropoff,
 }
 
 impl Category {
@@ -35,6 +38,7 @@ impl Category {
             Self::History => "history",
             Self::Persistence => "persistence",
             Self::Control => "control",
+            Self::Dropoff => "often used to send data out",
         }
     }
 }
@@ -83,7 +87,7 @@ const fn skip(at: At, pattern: &'static str) -> Rule {
 }
 
 use At::{Any, Home, Root};
-use Category::{Browser, Control, Credentials, History, Persistence};
+use Category::{Browser, Control, Credentials, Dropoff, History, Persistence};
 use On::{Open, Write};
 
 #[rustfmt::skip]
@@ -257,6 +261,76 @@ static RULES: &[Rule] = &[
     flag(Root, "/etc/hosts", Write, Persistence, "hosts file"),
 ];
 
+/// Hosts that packages and scripts rarely have a reason to talk to, and
+/// that stolen data is often sent to. Matched against the host name and
+/// everything under it (`hooks.slack.com` also matches `x.hooks.slack.com`).
+///
+/// To add one, add a line. Keep it to services whose main use is to receive
+/// arbitrary data from anyone: a general-purpose site does not belong here.
+#[rustfmt::skip]
+static HOSTS: &[(&str, &str)] = &[
+    // ---- paste and file-drop sites ----
+    ("pastebin.com", "paste site"),
+    ("paste.ee", "paste site"),
+    ("hastebin.com", "paste site"),
+    ("dpaste.com", "paste site"),
+    ("rentry.co", "paste site"),
+    ("termbin.com", "paste site"),
+    ("ix.io", "paste site"),
+    ("0x0.st", "file drop"),
+    ("transfer.sh", "file drop"),
+    ("file.io", "file drop"),
+    ("gofile.io", "file drop"),
+    ("catbox.moe", "file drop"),
+
+    // ---- chat webhooks and bots ----
+    ("discord.com", "Discord (webhooks)"),
+    ("discordapp.com", "Discord (webhooks)"),
+    ("api.telegram.org", "Telegram bot API"),
+    ("hooks.slack.com", "Slack webhook"),
+
+    // ---- request catchers ----
+    ("webhook.site", "request catcher"),
+    ("requestbin.com", "request catcher"),
+    ("pipedream.net", "request catcher"),
+    ("beeceptor.com", "request catcher"),
+    ("interact.sh", "request catcher"),
+    ("oast.fun", "request catcher"),
+    ("oast.pro", "request catcher"),
+    ("oast.live", "request catcher"),
+    ("oast.site", "request catcher"),
+    ("oast.online", "request catcher"),
+    ("oast.me", "request catcher"),
+    ("oastify.com", "request catcher"),
+    ("burpcollaborator.net", "request catcher"),
+
+    // ---- tunnels to someone's machine ----
+    ("ngrok.io", "tunnelling service"),
+    ("ngrok.app", "tunnelling service"),
+    ("ngrok-free.app", "tunnelling service"),
+    ("ngrok-free.dev", "tunnelling service"),
+    ("trycloudflare.com", "tunnelling service"),
+    ("serveo.net", "tunnelling service"),
+    ("localhost.run", "tunnelling service"),
+    ("loca.lt", "tunnelling service"),
+
+    // ---- dynamic DNS ----
+    ("duckdns.org", "dynamic DNS host"),
+    ("ddns.net", "dynamic DNS host"),
+    ("hopto.org", "dynamic DNS host"),
+    ("zapto.org", "dynamic DNS host"),
+    ("sytes.net", "dynamic DNS host"),
+];
+
+/// What kind of drop-off host `name` is, if it is on the list.
+fn dropoff(name: &str) -> Option<&'static str> {
+    let name = name.trim_end_matches('.').to_ascii_lowercase();
+    HOSTS.iter().find_map(|(host, what)| {
+        let under = name.strip_suffix(host)?;
+        (under.is_empty() || under.ends_with('.')).then_some(*what)
+    })
+}
+
 /// Classifies paths and peers. Holds the home directories to recognise.
 #[derive(Debug, Clone)]
 pub struct Classifier {
@@ -311,7 +385,11 @@ impl Classifier {
         None
     }
 
-    pub fn peer(&self, peer: &Peer) -> Option<Finding> {
+    /// `name` is the host name the peer was looked up by, when known.
+    pub fn peer(&self, peer: &Peer, name: Option<&str>) -> Option<Finding> {
+        if let Some(what) = name.and_then(dropoff) {
+            return Some(Finding { category: Dropoff, what });
+        }
         let (category, what) = match peer {
             Peer::Ip { ip, .. } => match ip {
                 // Link-local metadata services hand instance credentials to
@@ -616,14 +694,14 @@ mod tests {
         let c = c();
         let ip = |s: &str| Peer::Ip { ip: s.parse().expect("ip"), port: 80, proto: Proto::Tcp };
         let unix = |s: &str| Peer::Unix { path: s.into() };
-        assert_eq!(c.peer(&ip("169.254.169.254")).map(|f| f.what), Some("cloud metadata service"));
-        assert_eq!(c.peer(&ip("fd00:ec2::254")).map(|f| f.what), Some("cloud metadata service"));
-        assert_eq!(c.peer(&ip("104.16.1.1")), None);
-        assert_eq!(c.peer(&unix("/var/run/docker.sock")).map(|f| f.what), Some("container runtime socket"));
-        assert_eq!(c.peer(&unix("/tmp/ssh-XXXXabcd/agent.1234")).map(|f| f.what), Some("SSH agent"));
-        assert_eq!(c.peer(&unix("/run/user/1000/gnupg/S.gpg-agent")).map(|f| f.what), Some("GPG agent"));
-        assert_eq!(c.peer(&unix("/var/run/nscd/socket")), None);
-        assert_eq!(c.peer(&unix("@/tmp/.X11-unix/X0")), None);
+        assert_eq!(c.peer(&ip("169.254.169.254"), None).map(|f| f.what), Some("cloud metadata service"));
+        assert_eq!(c.peer(&ip("fd00:ec2::254"), None).map(|f| f.what), Some("cloud metadata service"));
+        assert_eq!(c.peer(&ip("104.16.1.1"), None), None);
+        assert_eq!(c.peer(&unix("/var/run/docker.sock"), None).map(|f| f.what), Some("container runtime socket"));
+        assert_eq!(c.peer(&unix("/tmp/ssh-XXXXabcd/agent.1234"), None).map(|f| f.what), Some("SSH agent"));
+        assert_eq!(c.peer(&unix("/run/user/1000/gnupg/S.gpg-agent"), None).map(|f| f.what), Some("GPG agent"));
+        assert_eq!(c.peer(&unix("/var/run/nscd/socket"), None), None);
+        assert_eq!(c.peer(&unix("@/tmp/.X11-unix/X0"), None), None);
         assert!(is_background(&unix("/var/run/nscd/socket")));
         assert!(is_background(&unix("/run/systemd/journal/socket")));
         assert!(!is_background(&unix("/var/run/docker.sock")));
@@ -632,6 +710,20 @@ mod tests {
         assert!(is_background(&dns("127.0.0.53")));
         assert!(is_background(&dns("192.168.1.1")));
         assert!(!is_background(&dns("8.8.8.8")));
+        // Hosts often used to send data out, by name.
+        let named = |name: &str| c.peer(&ip("203.0.113.9"), Some(name)).map(|f| (f.category, f.what));
+        assert_eq!(named("pastebin.com"), Some((Dropoff, "paste site")));
+        assert_eq!(named("Abc123.Ngrok-Free.app."), Some((Dropoff, "tunnelling service")));
+        assert_eq!(named("hooks.slack.com"), Some((Dropoff, "Slack webhook")));
+        assert_eq!(named("eu.api.telegram.org"), Some((Dropoff, "Telegram bot API")));
+        assert_eq!(named("slack.com"), None, "only the webhook host, not the whole site");
+        assert_eq!(named("notpastebin.com"), None, "a name that merely ends the same way");
+        assert_eq!(named("pastebin.com.example.org"), None);
+        assert_eq!(named("registry.npmjs.org"), None);
+        assert_eq!(named("pypi.org"), None);
+        // The metadata service is still recognised by address, name or not.
+        assert_eq!(c.peer(&ip("169.254.169.254"), Some("x")).map(|f| f.what), Some("cloud metadata service"));
+
         assert!(is_background(&Peer::Port { port: 53 }));
         let udp = |s: &str, port| Peer::Ip { ip: s.parse().expect("ip"), port, proto: Proto::Udp };
         assert!(is_background(&udp("91.189.91.112", 123)), "time sync");
@@ -652,6 +744,6 @@ mod tests {
         assert!(!is_background(&unix("/run/user/1000/gnupg/S.gpg-agent")));
         assert!(!is_background(&unix("/run/docker.sock")));
         assert!(!is_background(&Peer::Port { port: 443 }));
-        assert_eq!(c.peer(&Peer::Port { port: 443 }), None);
+        assert_eq!(c.peer(&Peer::Port { port: 443 }, None), None);
     }
 }

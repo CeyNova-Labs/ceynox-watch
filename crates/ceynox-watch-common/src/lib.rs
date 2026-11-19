@@ -27,6 +27,7 @@ pub const KIND_EXIT: u32 = 3;
 pub const KIND_OPEN: u32 = 4;
 pub const KIND_CONNECT: u32 = 5;
 pub const KIND_SEND: u32 = 6;
+pub const KIND_CLOSE: u32 = 7;
 
 /// Slots of the per-CPU `LOST` counter array: records that did not fit in
 /// the ring buffer, by class.
@@ -130,6 +131,48 @@ pub struct Sock {
     pub _pad2: [u8; 4],
 }
 
+/// A TCP connection that was reported by [`KIND_CONNECT`] has been closed.
+/// Carries how much went each way. `head.pid` is the process that opened
+/// the connection, which is not always the one closing it.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct Closed {
+    pub head: Head,
+    /// Address family: `AF_INET` (2) or `AF_INET6` (10).
+    pub family: u16,
+    /// Destination port, host byte order.
+    pub port: u16,
+    /// `sk_shutdown` at the time: [`RCV_SHUTDOWN`] once the peer has said
+    /// it is done sending, [`SEND_SHUTDOWN`] once we have.
+    pub shutdown: u8,
+    /// Non-zero when our end-of-data marker has been acknowledged.
+    pub fin_acked: u8,
+    pub _pad: u16,
+    /// IPv4 in the first four bytes, or a full IPv6 address.
+    pub addr: [u8; 16],
+    /// The kernel's count of acknowledged bytes. Besides data it counts one
+    /// for the opening handshake, and one for our end-of-data marker when
+    /// `fin_acked` is set.
+    pub sent: u64,
+    /// The kernel's count of received bytes. Besides data it counts one for
+    /// the peer's end-of-data marker when `shutdown` has [`RCV_SHUTDOWN`].
+    pub received: u64,
+}
+
+pub const RCV_SHUTDOWN: u8 = 1;
+pub const SEND_SHUTDOWN: u8 = 2;
+
+/// What the programs remember about an open connection, keyed by its
+/// kernel socket, so that its closing can be tied back to who opened it.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct Conn {
+    pub pid: u32,
+    pub family: u16,
+    pub port: u16,
+    pub addr: [u8; 16],
+}
+
 /// Byte offsets of the kernel struct fields the programs read.
 ///
 /// Rust BPF programs have no CO-RE relocations, so the loader looks these up
@@ -167,6 +210,15 @@ pub struct Offsets {
     pub sk_dport: u32,
     pub sk_v6_daddr: u32,
     pub msghdr_name: u32,
+    /// `struct tcp_sock`: the byte counters. Zero when the kernel has no
+    /// such field, in which case transfers are not reported.
+    pub tcp_bytes_acked: u32,
+    pub tcp_bytes_received: u32,
+    /// For telling data apart from the handshake bytes in those counters.
+    /// Zero when not available; the counts are then high by one or two.
+    pub sk_shutdown: u32,
+    pub tcp_snd_una: u32,
+    pub tcp_write_seq: u32,
 }
 
 /// Load-time settings, written into the program's read-only data.
@@ -186,7 +238,7 @@ pub struct Config {
 }
 
 /// Number of `u32` words in a [`Config`].
-pub const CONFIG_WORDS: usize = 30;
+pub const CONFIG_WORDS: usize = 35;
 const _: () = assert!(core::mem::size_of::<Config>() == CONFIG_WORDS * 4);
 
 impl Config {
@@ -228,6 +280,11 @@ impl Config {
             o.sk_dport,
             o.sk_v6_daddr,
             o.msghdr_name,
+            o.tcp_bytes_acked,
+            o.tcp_bytes_received,
+            o.sk_shutdown,
+            o.tcp_snd_una,
+            o.tcp_write_seq,
         ]
     }
 
@@ -264,6 +321,11 @@ impl Config {
                 sk_dport: w[27],
                 sk_v6_daddr: w[28],
                 msghdr_name: w[29],
+                tcp_bytes_acked: w[30],
+                tcp_bytes_received: w[31],
+                sk_shutdown: w[32],
+                tcp_snd_una: w[33],
+                tcp_write_seq: w[34],
             },
         }
     }
@@ -303,7 +365,9 @@ mod tests {
         assert_eq!(&cfg.ns_ino as *const u32 as usize - base, 3 * 4);
         assert_eq!(&cfg.off.task_pid as *const u32 as usize - base, 4 * 4);
         assert_eq!(&cfg.off.upid_size as *const u32 as usize - base, 13 * 4);
-        assert_eq!(&cfg.off.msghdr_name as *const u32 as usize - base, (CONFIG_WORDS - 1) * 4);
-        assert_eq!(cfg.off.msghdr_name, 100 + CONFIG_WORDS as u32 - 1);
+        assert_eq!(&cfg.off.msghdr_name as *const u32 as usize - base, 29 * 4);
+        assert_eq!(&cfg.off.tcp_bytes_received as *const u32 as usize - base, 31 * 4);
+        assert_eq!(&cfg.off.tcp_write_seq as *const u32 as usize - base, (CONFIG_WORDS - 1) * 4);
+        assert_eq!(cfg.off.tcp_write_seq, 100 + CONFIG_WORDS as u32 - 1);
     }
 }
