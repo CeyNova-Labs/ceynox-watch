@@ -98,11 +98,11 @@ dependencies = [
 
 [[package]]
 name = "ceynox-watch-common"
-version = "0.2.2"
+version = "0.2.3"
 
 [[package]]
 name = "ceynox-watch-ebpf"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "aya-ebpf",
  "ceynox-watch-common",

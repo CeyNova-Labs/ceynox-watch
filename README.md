@@ -18,6 +18,8 @@
 <p align="center">
   <a href="https://github.com/CeyNova-Labs/ceynox-watch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/CeyNova-Labs/ceynox-watch/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/CeyNova-Labs/ceynox-watch/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/CeyNova-Labs/ceynox-watch?label=release"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/CeyNova-Labs/ceynox-watch"><img alt="OpenSSF Scorecard" src="https://api.scorecard.dev/projects/github.com/CeyNova-Labs/ceynox-watch/badge"></a>
+  <a href="https://www.bestpractices.dev/projects/16928"><img alt="OpenSSF Best Practices" src="https://www.bestpractices.dev/projects/16928/badge"></a>
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
   <img alt="Platforms: Linux and macOS" src="https://img.shields.io/badge/platforms-Linux%20%7C%20macOS-informational">
   <img alt="Written in Rust, no unsafe in user space" src="https://img.shields.io/badge/rust-no%20unsafe%20in%20user%20space-orange">
@@ -64,7 +66,7 @@ ceynox-watch shows; it does not block, and it does not decide what is malicious.
 | **Watch an AI coding agent** that is already running | `ceynox-watch --pid "$(pgrep -n claude)"` | [more](#watch-a-command) |
 | **Inspect** a package in a throwaway container, before it is on your machine | `ceynox-watch --inspect npm:some-package` | [more](#inspect-a-package-before-you-install-it) |
 | **Compare** an install with the last time you ran it | `ceynox-watch --baseline install.json -- npm ci` | [more](#compare-with-last-time) |
-| **Fail a build** when an install starts doing something new | `uses: CeyNova-Labs/ceynox-watch@v0.2.2` | [more](#in-ci) |
+| **Fail a build** when an install starts doing something new | `uses: CeyNova-Labs/ceynox-watch@v0.2.3` | [more](#in-ci) |
 | **Share** a run as one HTML page, or Markdown | `ceynox-watch --report run.html -- make` | [more](#share-a-run) |
 
 ## Usage
@@ -139,7 +141,7 @@ With `--fail-on new`, something new makes ceynox-watch exit with status 3 where 
 The same, as a GitHub Action. The report lands in the job summary, and the step fails when the install starts doing something it did not do before:
 
 ```yaml
-- uses: CeyNova-Labs/ceynox-watch@v0.2.2
+- uses: CeyNova-Labs/ceynox-watch@v0.2.3
   id: watch
   with:
     run: npm ci
