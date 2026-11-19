@@ -8,6 +8,7 @@
 use std::{collections::HashMap, fmt::Write as _, net::IpAddr};
 
 use crate::{
+    baseline::Diff,
     classify::Finding,
     event::{Peer, Proto},
     report::{Exit, Line, LineKind, NOTABLE_SENT, PeerRec, Report, Subject},
@@ -60,7 +61,7 @@ fn fit(text: &str, max: usize) -> String {
     out
 }
 
-fn thousands(n: usize) -> String {
+pub fn thousands(n: usize) -> String {
     let digits = n.to_string();
     let mut out = String::new();
     for (i, d) in digits.chars().enumerate() {
@@ -72,8 +73,13 @@ fn thousands(n: usize) -> String {
     out
 }
 
+/// `1 thing`, `2 things`.
+pub fn count(n: usize, one: &str) -> String {
+    if n == 1 { format!("1 {one}") } else { format!("{} {one}s", thousands(n)) }
+}
+
 /// A byte count for people: `812 B`, `4.2 kB`, `1.3 GB`.
-fn size(bytes: u64) -> String {
+pub fn size(bytes: u64) -> String {
     const UNITS: [&str; 5] = ["B", "kB", "MB", "GB", "TB"];
     let mut value = bytes as f64;
     let mut unit = 0;
@@ -84,7 +90,7 @@ fn size(bytes: u64) -> String {
     if unit == 0 { format!("{bytes} B") } else { format!("{value:.1} {}", UNITS[unit]) }
 }
 
-fn duration(ms: u64) -> String {
+pub fn duration(ms: u64) -> String {
     match ms {
         0..1000 => format!("{ms}ms"),
         1000..60_000 => format!("{:.1}s", ms as f64 / 1000.0),
@@ -165,7 +171,7 @@ pub fn show_peer(peer: &Peer, name: Option<&str>) -> String {
     }
 }
 
-fn who(report: &Report, proc: usize) -> String {
+pub fn who(report: &Report, proc: usize) -> String {
     let name = clean(report.procs[proc].name());
     match report.package(proc) {
         Some(pkg) => format!("{name} [{}]", clean(&pkg)),
@@ -239,7 +245,7 @@ pub struct Header {
 }
 
 /// Group files by the directory area they are in, largest first.
-fn areas(report: &Report, style: &Style, paths: &std::collections::HashSet<String>) -> Vec<(String, usize)> {
+pub fn areas(report: &Report, style: &Style, paths: &std::collections::HashSet<String>) -> Vec<(String, usize)> {
     let mut counts: HashMap<String, usize> = HashMap::new();
     for path in paths {
         let shown = show_path(report, style, path);
@@ -280,6 +286,67 @@ fn peer_line(report: &Report, style: &Style, rec: &PeerRec) -> String {
     }
     let _ = write!(line, "{}", style.paint(DIM, &format!("  {}{pkg}", by.join(", "))));
     line
+}
+
+/// One entry under "worth a look": a flagged thing, and who did it.
+#[derive(Debug, Clone)]
+pub struct Group {
+    /// `read `, `wrote` or `net  `, padded to one width.
+    pub verb: &'static str,
+    pub subject: String,
+    pub finding: Finding,
+    /// The process and how it came to run, with its package if it has one.
+    pub by: String,
+    pub times: usize,
+}
+
+/// The findings, grouped. The same thing done by the same kind of process
+/// (a loop, a parallel build) is one entry with a count. Within one
+/// package, the same thing done by any of its processes is one entry too:
+/// which of a build's steps did it matters less than whose build.
+pub fn finding_groups(report: &Report, style: &Style) -> Vec<Group> {
+    let mut groups: Vec<(String, Group)> = Vec::new();
+    for f in &report.findings {
+        let (verb, subject) = match &f.subject {
+            Subject::File { path, write: false } => ("read ", show_path(report, style, path)),
+            Subject::File { path, write: true } => ("wrote", show_path(report, style, path)),
+            Subject::Peer(peer) => ("net  ", show_peer(peer, report.peer_name(peer))),
+        };
+        let chain: Vec<String> = report.ancestry(f.proc).take(5).map(|p| fit(&clean(&p.command()), 48)).collect();
+        let pkg = report.package(f.proc).map(|p| format!("  [{}]", clean(&p))).unwrap_or_default();
+        let by = format!("{}{pkg}", chain.join(" ← "));
+        let key = if pkg.is_empty() { by.clone() } else { pkg };
+        let same = |(k, g): &&mut (String, Group)| {
+            *k == key && g.verb == verb && g.subject == subject && g.finding == f.finding
+        };
+        match groups.iter_mut().find(same) {
+            Some((_, group)) => group.times += 1,
+            None => groups.push((key, Group { verb, subject, finding: f.finding, by, times: 1 })),
+        }
+    }
+    groups.into_iter().map(|(_, g)| g).collect()
+}
+
+/// What this run did that the one it is compared with did not.
+pub fn changes(diff: &Diff, against: &str, style: &Style) -> String {
+    let mut out = String::new();
+    let against = fit(&clean(against), 48);
+    if diff.new.is_empty() {
+        let _ = writeln!(out, "\n {}", style.paint(GREEN, &format!("Nothing new since {against}.")));
+    } else {
+        let _ = writeln!(out, "\n {}  {}", style.paint(RED, &format!("NEW SINCE {against}")), diff.new.len());
+        for (kind, what) in diff.new.iter().take(60) {
+            let _ = writeln!(out, "   {}  {}", style.paint(YELLOW, &format!("{:<11}", kind.label())), clean(what));
+        }
+        if diff.new.len() > 60 {
+            let _ = writeln!(out, "   +{} more", diff.new.len() - 60);
+        }
+    }
+    if diff.gone > 0 {
+        let _ =
+            writeln!(out, "   {}", style.paint(DIM, &format!("{} seen then, not seen now", count(diff.gone, "thing"))));
+    }
+    out
 }
 
 pub fn summary(report: &Report, header: &Header, style: &Style) -> String {
@@ -358,32 +425,13 @@ pub fn summary(report: &Report, header: &Header, style: &Style) -> String {
             style.paint(GREEN, "Nothing touched the credential, browser, history or startup locations in the catalog.")
         );
     } else {
-        // The same thing done by the same kind of process (a loop, a
-        // parallel build) is one entry with a count. Within one package,
-        // the same thing done by any of its processes is one entry too:
-        // which of a build's steps did it matters less than whose build.
-        let mut groups: Vec<(String, String, String, usize)> = Vec::new();
-        for f in &report.findings {
-            let (verb, subject) = match &f.subject {
-                Subject::File { path, write: false } => ("read ", show_path(report, style, path)),
-                Subject::File { path, write: true } => ("wrote", show_path(report, style, path)),
-                Subject::Peer(peer) => ("net  ", show_peer(peer, report.peer_name(peer))),
-            };
-            let head = format!("   {}  {subject}  {}", style.paint(RED, verb), flag(style, &f.finding));
-            let chain: Vec<String> = report.ancestry(f.proc).take(5).map(|p| fit(&clean(&p.command()), 48)).collect();
-            let pkg = report.package(f.proc).map(|p| format!("  [{}]", clean(&p))).unwrap_or_default();
-            let by = format!("{}{pkg}", chain.join(" ← "));
-            let key = if pkg.is_empty() { by.clone() } else { pkg };
-            match groups.iter_mut().find(|(h, k, _, _)| *h == head && *k == key) {
-                Some(group) => group.3 += 1,
-                None => groups.push((head, key, by, 1)),
-            }
-        }
+        let groups = finding_groups(report, style);
         let _ = writeln!(out, "\n {}  {}", style.paint(RED, "WORTH A LOOK"), groups.len());
-        for (head, _, by, times) in groups.iter().take(40) {
-            let times = if *times > 1 { style.paint(DIM, &format!("  ×{times}")) } else { String::new() };
+        for g in groups.iter().take(40) {
+            let times = if g.times > 1 { style.paint(DIM, &format!("  ×{}", g.times)) } else { String::new() };
+            let head = format!("   {}  {}  {}", style.paint(RED, g.verb), g.subject, flag(style, &g.finding));
             let _ = writeln!(out, "{head}{times}");
-            let _ = writeln!(out, "          {}", style.paint(DIM, by));
+            let _ = writeln!(out, "          {}", style.paint(DIM, &g.by));
         }
         if groups.len() > 40 {
             let _ = writeln!(out, "   +{} more", groups.len() - 40);

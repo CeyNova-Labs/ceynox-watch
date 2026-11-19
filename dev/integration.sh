@@ -114,6 +114,43 @@ kill $sink 2>/dev/null || true
 has "$T/up.jsonl" "the byte counts are exact" '"type":"close"' '"sent":300000,"received":1234'
 has "$T/up.err" "a large upload gets a line and a total" "sent   300.0 kB to 127.0.0.1:9911" "↑300.0 kB ↓1.2 kB"
 
+echo "a script on standard input"
+as_dev "echo 'cat ~/.aws/credentials > /dev/null' | ceynox-watch --color never -- sh" > /dev/null 2> "$T/pipe.err" || fail "piped script"
+has "$T/pipe.err" "what the script does is shown" "READ   ~/.aws/credentials  AWS credentials (credentials)  cat"
+
+echo "an AI agent's configuration is changed"
+as_dev "ceynox-watch --color never -- sh -c 'mkdir -p ~/.cursor && echo {} > ~/.cursor/mcp.json'" > /dev/null 2> "$T/agent.err" || fail "agent config"
+has "$T/agent.err" "the change is flagged" "WRITE  ~/.cursor/mcp.json  Cursor MCP servers (persistence)"
+
+echo "compared with an earlier run"
+as_dev "ceynox-watch -q --no-summary --write-baseline $T/base.json -- sh -c 'echo hi > out.txt'" 2> /dev/null || fail "writing a baseline"
+has "$T/base.json" "the baseline is small and readable" '"ceynox-watch-baseline": 1' '"./out.txt"' '"sh"'
+as_dev "ceynox-watch --color never --baseline $T/base.json --fail-on new -- sh -c 'echo hi > out.txt'" > /dev/null 2> "$T/same.err" && ok "the same run again passes" || fail "the same run again passes"
+has "$T/same.err" "and says nothing is new" "Nothing new since base.json."
+set +e
+as_dev "ceynox-watch --color never --baseline $T/base.json --fail-on new --report $T/r.md --json $T/new.jsonl -- sh -c 'echo hi > out.txt; cat ~/.aws/credentials > /dev/null; curl -s -m 10 -o /dev/null https://example.com'" > /dev/null 2> "$T/new.err"
+[ $? -eq 3 ] && ok "a run that does more exits 3" || fail "a run that does more exits 3"
+as_dev "ceynox-watch -q --no-summary --fail-on flagged -- sh -c 'cat ~/.aws/credentials > /dev/null'" 2> "$T/flag.err"
+[ $? -eq 3 ] && ok "--fail-on flagged exits 3" || fail "--fail-on flagged exits 3"
+as_dev "ceynox-watch -q --no-summary --fail-on flagged -- sh -c 'cat ~/.aws/credentials > /dev/null; exit 7'" 2> /dev/null
+[ $? -eq 7 ] && ok "a failing command keeps its own status" || fail "a failing command keeps its own status"
+as_dev "ceynox-watch -q --no-summary --fail-on flagged -- sh -c 'echo hi > out.txt'" 2> /dev/null
+[ $? -eq 0 ] && ok "nothing flagged, nothing failed" || fail "nothing flagged, nothing failed"
+as_dev "ceynox-watch -q --no-summary --baseline $T/missing.json -- true" 2> "$T/missing.err"
+[ $? -eq 125 ] && ok "a missing baseline is an error before anything runs" || fail "missing baseline"
+set -e
+has "$T/new.err" "what is new is listed" "NEW SINCE base.json" "flagged      read ~/.aws/credentials (AWS credentials) by cat" "destination  example.com:443" "program      curl"
+has "$T/new.err" "and the reason for failing is given" "not in base.json (--fail-on new)"
+has "$T/flag.err" "so is the reason for --fail-on flagged" "failing: 1 thing in the catalog touched"
+has "$T/r.md" "the Markdown report has it all" '## ceynox-watch: `sh -c' '### Worth a look (1)' '### New since `base.json`' '`example.com:443'
+ceynox-watch --view "$T/new.jsonl" --baseline "$T/base.json" --report "$T/r.html" -q > "$T/view.out" 2>&1 || fail "report from a recording"
+has "$T/r.html" "a recording becomes an HTML report" "<!doctype html>" "AWS credentials" "New since <code>base.json</code>" "example.com:443"
+has "$T/view.out" "a recording compares like the run did" "destination  example.com:443" "program      curl"
+
+echo "a package run straight from the registry"
+as_dev "ceynox-watch --color never -- npx --yes cowsay@1.6.0 hi" > /dev/null 2> "$T/npx.err" || fail "npx"
+has "$T/npx.err" "its processes carry its name" "[npx:cowsay]"
+
 echo "npm install with an install script"
 su dev -c "cd $H/app && ceynox-watch --color never --json $T/npm.jsonl -- npm install --no-audit --no-fund --install-links" > /dev/null 2> "$T/npm.err" || fail "npm install"
 has "$T/npm.err" "install script attributed to its package" "node collect.js  [npm:sneaky-package]"

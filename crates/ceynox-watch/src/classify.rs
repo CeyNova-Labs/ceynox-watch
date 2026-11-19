@@ -171,6 +171,22 @@ static RULES: &[Rule] = &[
     flag(Home, ".huggingface/token", Open, Credentials, "Hugging Face token"),
     flag(Home, ".config/openai/**", Open, Credentials, "OpenAI credentials"),
 
+    // ---- AI agents: what they are told, and which tools they load ----
+    // A change here outlives the run: the agent reads it next time it starts.
+    flag(Home, ".claude/settings.json", Write, Persistence, "Claude Code settings"),
+    flag(Home, ".claude/settings.local.json", Write, Persistence, "Claude Code settings"),
+    flag(Home, ".claude/CLAUDE.md", Write, Persistence, "Claude Code instructions"),
+    flag(Home, ".codex/config.toml", Write, Persistence, "Codex config"),
+    flag(Home, ".codex/AGENTS.md", Write, Persistence, "Codex instructions"),
+    flag(Home, ".gemini/settings.json", Write, Persistence, "Gemini CLI settings"),
+    flag(Home, ".gemini/GEMINI.md", Write, Persistence, "Gemini CLI instructions"),
+    flag(Home, ".cursor/mcp.json", Write, Persistence, "Cursor MCP servers"),
+    flag(Home, ".codeium/windsurf/mcp_config.json", Write, Persistence, "Windsurf MCP servers"),
+    flag(Home, ".config/Claude/claude_desktop_config.json", Write, Persistence, "Claude Desktop MCP servers"),
+    flag(Home, "Library/Application Support/Claude/claude_desktop_config.json", Write, Persistence, "Claude Desktop MCP servers"),
+    flag(Home, ".config/Code/User/mcp.json", Write, Persistence, "VS Code MCP servers"),
+    flag(Home, "Library/Application Support/Code/User/mcp.json", Write, Persistence, "VS Code MCP servers"),
+
     // ---- password stores and keys ----
     flag(Home, ".gnupg/private-keys-v1.d/**", Open, Credentials, "GPG private key"),
     flag(Home, ".gnupg/secring.gpg", Open, Credentials, "GPG private keyring"),
@@ -671,6 +687,24 @@ mod tests {
         assert_eq!(what("/Users/sam/Library/LaunchAgents/com.x.plist", true), Some("macOS launch agent"));
         assert_eq!(what("/etc/cron.d/job", true), Some("cron job"));
         assert_eq!(what("/etc/hosts", false), None);
+    }
+
+    #[test]
+    fn agent_configuration_is_flagged_when_changed() {
+        assert_eq!(what("/home/sam/.claude/settings.json", true), Some("Claude Code settings"));
+        assert_eq!(what("/home/sam/.claude/settings.json", false), None, "agents read their own settings all day");
+        assert_eq!(what("/home/sam/.cursor/mcp.json", true), Some("Cursor MCP servers"));
+        assert_eq!(what("/home/sam/.codex/config.toml", true), Some("Codex config"));
+        assert_eq!(
+            what("/Users/sam/Library/Application Support/Claude/claude_desktop_config.json", true),
+            Some("Claude Desktop MCP servers")
+        );
+        // Credentials stay flagged on any open, ahead of these.
+        assert_eq!(what("/home/sam/.claude/.credentials.json", false), Some("Claude Code credentials"));
+        // A project's own copy is the project's business.
+        assert_eq!(what("/home/sam/proj/.claude/settings.json", true), None);
+        // State an agent rewrites constantly would only teach people to stop reading.
+        assert_eq!(what("/home/sam/.claude.json", true), None);
     }
 
     #[test]

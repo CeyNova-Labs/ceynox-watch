@@ -48,6 +48,20 @@ echo "listing a folder of secrets"
 "$BIN" --color never -- /bin/ls "$HOME/.ssh" > /dev/null 2> "$T/d.err" || fail "ls"
 has "$T/d.err" "the listing is flagged" "READ   ~/.ssh  SSH folder listed"
 
+echo "compared with an earlier run"
+"$BIN" -q --no-summary --write-baseline "$T/base.json" -- /bin/sh -c 'echo hi > out.txt' 2> /dev/null || fail "writing a baseline"
+has "$T/base.json" "the baseline is small and readable" '"ceynox-watch-baseline": 1' '"./out.txt"'
+set +e
+"$BIN" --color never --baseline "$T/base.json" --fail-on new --report "$T/r.md" --json "$T/new.jsonl" -- /bin/sh -c 'echo hi > out.txt; /bin/cat ~/.aws/credentials > /dev/null' > /dev/null 2> "$T/new.err"
+[ $? -eq 3 ] && ok "a run that does more exits 3" || fail "a run that does more exits 3"
+"$BIN" -q --no-summary --fail-on flagged -- /bin/sh -c 'echo hi > out.txt' 2> /dev/null
+[ $? -eq 0 ] && ok "nothing flagged, nothing failed" || fail "nothing flagged, nothing failed"
+set -e
+has "$T/new.err" "what is new is listed" "NEW SINCE base.json" "flagged      read ~/.aws/credentials (AWS credentials) by cat"
+has "$T/r.md" "the Markdown report has it" '### Worth a look (1)' '### New since `base.json`'
+"$BIN" --view "$T/new.jsonl" --report "$T/r.html" -q > /dev/null 2>&1 || fail "report from a recording"
+has "$T/r.html" "a recording becomes an HTML report" "<!doctype html>" "AWS credentials" "~/.aws/credentials"
+
 echo "exit status passes through"
 set +e
 "$BIN" -q --no-summary --json /dev/null -- /bin/sh -c 'exit 7'; [ $? -eq 7 ] && ok "exit 7" || fail "exit 7"
