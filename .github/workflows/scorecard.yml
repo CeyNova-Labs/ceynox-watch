@@ -3,6 +3,10 @@ name: Scorecard
 # OpenSSF Scorecard: an outside measure of how this repository is run
 # (pinned dependencies, token permissions, branch protection and so on).
 # Results are published at scorecard.dev and in the code scanning tab.
+#
+# This repository only runs third-party actions that are on its allow-list
+# (Settings, Actions, General). ossf/scorecard-action is on it; a workflow
+# that names an action which is not fails before it starts.
 on:
   push:
     branches: [main]
