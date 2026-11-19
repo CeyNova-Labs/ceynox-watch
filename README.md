@@ -253,7 +253,7 @@ What ceynox-watch adds is what you would otherwise build on top of them:
 - **macOS, without root and without installing anything.**
 - **No setup.** No policy to write, no daemon, no cluster.
 
-An expert with `strace` and a script can do all of this, and does not need ceynox-watch. It is for everyone who is not going to.
+An expert with `strace` and a script can do most of this, and does not need ceynox-watch. It is for everyone who is not going to.
 
 | Tool | What it is, in its own words | Reach for it instead when |
 |---|---|---|
@@ -262,29 +262,11 @@ An expert with `strace` and a script can do all of this, and does not need ceyno
 | [Tetragon](https://tetragon.io) | "realtime, eBPF-based Security Observability and Runtime Enforcement" | you need something running all the time across hosts or a cluster, with policies, and able to act. |
 | [Falco](https://falco.org) | "designed to detect and alert on abnormal behavior and potential security threats in real-time" | you want rule-based alerts from hosts, containers and Kubernetes, fed into your monitoring. |
 | [Tracee](https://github.com/aquasecurity/tracee) | "a runtime security and observability tool" that uses eBPF | you want a continuous stream of detailed runtime events to investigate. |
-| [Harden-Runner](https://github.com/step-security/harden-runner) | for GitHub Actions jobs: "Each outbound network connection, file operation, and process execution is mapped" | your concern is GitHub Actions specifically and you want what ours does not do: blocking network traffic outside an allow-list. |
+| [Harden-Runner](https://github.com/step-security/harden-runner) | for GitHub Actions jobs: "Each outbound network connection, file operation, and process execution is mapped" | your concern is GitHub Actions. It overlaps most with our Action: it also builds a baseline of a job's outbound calls and flags what is new. It goes further than we do by blocking traffic outside an allow-list, and it shows results on StepSecurity's site, where ours writes files into the job. |
 | [OpenSSF Package Analysis](https://github.com/ossf/package-analysis) | "analyses the capabilities of packages available on open source repositories" | you want a stronger sandbox than `--inspect` gives. It runs packages in gVisor; ours shares your kernel. |
 | [Socket Firewall](https://docs.socket.dev/docs/socket-firewall-free) | "blocks confirmed malware that has been verified through human review" | you want known-bad packages stopped before they install. It works from what is already known; ceynox-watch shows what happened, known or not. The two go together. |
 
-### Against strace, measured
-
-The closest comparison is `strace -f`, so here are the differences we have tested, not assumed:
-
-- **Speed is not the difference it might seem.** A warm-cache `npm ci` of a project depending on express, typescript, eslint, esbuild and webpack, median of 11 runs:
-
-  | | Time | Slower by |
-  |---|---:|---:|
-  | on its own | 1,251 ms | |
-  | `strace -f` | 3,647 ms | 191% |
-  | `strace -f -e trace=execve,openat,connect` | 3,463 ms | 177% |
-  | the same with `--seccomp-bpf` | 1,322 ms | 6% |
-  | ceynox-watch | 1,368 ms | 9% |
-
-  By default strace stops the process at every system call, and that is costly. Told which calls it wants and given `--seccomp-bpf`, it is as fast as ceynox-watch, slightly faster here. A command that does nothing takes about 220 ms longer under ceynox-watch, so very short commands pay proportionally more. Measured on one machine (Linux 7.0, arm64, strace 6.13) with [`dev/bench.sh`](dev/bench.sh); run it on yours.
-- **Opens made through `io_uring`.** A program that opens a file with an `io_uring` request makes no `open` system call. strace showed only `io_uring_enter`; ceynox-watch reported the file, because it hooks where the kernel opens files and not where programs ask.
-- **Commands that use `sudo`.** Run as an ordinary user, `strace -f sudo id` fails, because a traced set-user-ID program runs without its privileges, as the strace manual notes. Under ceynox-watch the same command works and what it ran as root is in the record.
-- **Resolved paths.** strace prints the path a program passed; `strace -y` adds the file it resolved to. On Linux ceynox-watch always shows the resolved one.
-- **What strace has and this does not:** every system call, their arguments and return values, signals, timing per call, and decades of use. ceynox-watch records program starts and exits, file opens, connections and transfer sizes, and nothing else.
+The closest comparison is `strace -f`. [docs/comparison.md](docs/comparison.md) has it measured: timings, and three things the two do differently, each tested on a real kernel. In short, speed is not the difference (strace in its fastest mode is as quick), and what differs is `io_uring`, commands that use `sudo`, and how much of a record you get.
 
 ## Platforms
 
