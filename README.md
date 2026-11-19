@@ -247,7 +247,7 @@ None of the mechanisms here are new. Tracing a command is what `strace` has done
 What ceynox-watch adds is what you would otherwise build on top of them:
 
 - **Attribution to a package.** Not "process 4211 opened a file" but "the install script of this package did". Tracing tools do not know what a package is.
-- **Knowing what matters.** A catalog of credential, browser, history and startup locations, so that the three lines worth reading are not lost among eight thousand.
+- **Knowing what matters.** A catalog of credential, browser, history and startup locations, so that the few lines worth reading are not lost among thousands.
 - **A comparison with last time,** as a short list and, in CI, a failing check.
 - **Somewhere safe to try a package first,** with `--inspect`.
 - **macOS, without root and without installing anything.**
