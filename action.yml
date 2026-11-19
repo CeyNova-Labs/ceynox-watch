@@ -34,7 +34,11 @@ inputs:
 
 outputs:
   report:
-    description: Path of the Markdown report, which is also added to the job summary.
+    description: >-
+      Path of the Markdown report, which is also added to the job summary.
+      Each output is also set as an environment variable for later steps
+      (CEYNOX_WATCH_REPORT, CEYNOX_WATCH_RECORDING, CEYNOX_WATCH_BASELINE),
+      which is the way to reach them after this step has failed.
     value: ${{ steps.watch.outputs.report }}
   recording:
     description: Path of the full recording, for `ceynox-watch --view`.
@@ -121,4 +125,11 @@ runs:
           echo "recording=$out/recording.jsonl"
           echo "baseline=$out/baseline.json"
         } >> "$GITHUB_OUTPUT"
+        # The same for later steps as environment variables, which are
+        # still there when this step has failed and its outputs are not.
+        {
+          echo "CEYNOX_WATCH_REPORT=$out/report.md"
+          echo "CEYNOX_WATCH_RECORDING=$out/recording.jsonl"
+          echo "CEYNOX_WATCH_BASELINE=$out/baseline.json"
+        } >> "$GITHUB_ENV"
         exit "$status"

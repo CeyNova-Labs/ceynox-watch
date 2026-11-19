@@ -100,11 +100,10 @@ jobs:
       - name: "Action: that one failed, and said why"
         env:
           OUTCOME: ${{ steps.more.outcome }}
-          REPORT: ${{ steps.more.outputs.report }}
         run: |
           [ "$OUTCOME" = failure ] || { echo "expected the step to fail, it was: $OUTCOME"; exit 1; }
-          grep -F 'example.com:443' "$REPORT"
-          grep -F '### New since' "$REPORT"
+          grep -F 'example.com:443' "$CEYNOX_WATCH_REPORT"
+          grep -F '### New since' "$CEYNOX_WATCH_REPORT"
 
       - name: Inspect a package in a throwaway container
         run: |

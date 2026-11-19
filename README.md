@@ -145,7 +145,7 @@ The same, as a GitHub Action. The report lands in the job summary, and the step 
     fail-on: new
 ```
 
-Until the baseline file exists nothing is compared and the step says so. Every run writes its own baseline to the path in the `baseline` output; take the first one from there (upload it as an artifact, say) and commit it. Make it on the runner, not on your laptop: the two install differently. It is tested on GitHub's Linux runners, where `sudo` asks no questions.
+Until the baseline file exists nothing is compared and the step says so. Every run writes its own baseline to the path in the `baseline` output, also set as `CEYNOX_WATCH_BASELINE` for later steps; take the first one from there (upload it as an artifact, say) and commit it. Make it on the runner, not on your laptop: the two install differently. It is tested on GitHub's Linux runners, where `sudo` asks no questions.
 
 A dependency update that changes what the install does then shows up as a failed check with the difference spelled out, on the pull request that causes it.
 
