@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 999 508" width="999" height="508" role="img" aria-label="ceynox-watch comparing an install with an earlier one: three programs run by an install script are listed as new, and the run fails">
+<rect width="999" height="508" rx="10" fill="#0d1117"/>
+<circle cx="22" cy="18.0" r="6" fill="#ff5f57"/>
+<circle cx="42" cy="18.0" r="6" fill="#febc2e"/>
+<circle cx="62" cy="18.0" r="6" fill="#28c840"/>
+<g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#d7dae0" xml:space="preserve">
+<text x="18" y="48"><tspan fill="#7ee787">$</tspan><tspan> ceynox-watch -q --inspect npm:esbuild --baseline before.json --fail-on new</tspan></text>
+<text x="18" y="67"></text>
+<text x="18" y="86"><tspan>added 2 packages in 958ms</tspan></text>
+<text x="18" y="105"></text>
+<text x="18" y="124"><tspan fill="#7d8590">── ceynox-watch ──────────────────────────────────────────────────────────────</tspan></text>
+<text x="18" y="143"><tspan> </tspan><tspan font-weight="bold">npm:esbuild in node:lts-slim</tspan><tspan>  1.0s  exit 0</tspan></text>
+<text x="18" y="162"></text>
+<text x="18" y="181"><tspan> </tspan><tspan font-weight="bold">PROCESSES</tspan><tspan>  4 started, 5 programs run</tspan></text>
+<text x="18" y="200"><tspan>   node ×2  esbuild  sh</tspan></text>
+<text x="18" y="219"></text>
+<text x="18" y="238"><tspan> </tspan><tspan font-weight="bold">NETWORK</tspan><tspan>  1 destination</tspan></text>
+<text x="18" y="257"><tspan>   registry.npmjs.org:443 (104.16.4.34)  tcp, https</tspan><tspan fill="#7d8590">  ×9</tspan><tspan>  ↑26.7 kB ↓6.0 MB</tspan><tspan fill="#7d8590">  node</tspan></text>
+<text x="18" y="276"></text>
+<text x="18" y="295"><tspan> </tspan><tspan font-weight="bold">FILES</tspan><tspan>  699 read, 613 written</tspan></text>
+<text x="18" y="314"><tspan>   written  /tmp/node-compile-cache (541)  ~/.npm (59)  ./node_modules (11)  ./package-lock.json (1)  ./package…</tspan></text>
+<text x="18" y="333"><tspan>   read     /usr/local (664)  /proc (8)  /usr/lib (8)  /sys (6)  ./node_modules (4)  /usr/bin (2)  +7 more</tspan></text>
+<text x="18" y="352"></text>
+<text x="18" y="371"><tspan> </tspan><tspan fill="#7ee787">Nothing touched the credential, browser, history or startup locations in the catalog.</tspan></text>
+<text x="18" y="390"></text>
+<text x="18" y="409"><tspan> </tspan><tspan font-weight="bold" fill="#ff7b72">NEW SINCE before.json</tspan><tspan>  3</tspan></text>
+<text x="18" y="428"><tspan>   </tspan><tspan fill="#e3b341">program    </tspan><tspan>  esbuild [npm:esbuild]</tspan></text>
+<text x="18" y="447"><tspan>   </tspan><tspan fill="#e3b341">program    </tspan><tspan>  node [npm:esbuild]</tspan></text>
+<text x="18" y="466"><tspan>   </tspan><tspan fill="#e3b341">program    </tspan><tspan>  sh [npm:esbuild]</tspan></text>
+<text x="18" y="485"><tspan>ceynox-watch: failing: 3 things not in before.json (--fail-on new)</tspan></text>
+</g></svg>

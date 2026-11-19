@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 999 546" width="999" height="546" role="img" aria-label="ceynox-watch inspecting the npm package puppeteer in a container: its install script downloads 331.7 MB from storage.googleapis.com">
+<rect width="999" height="546" rx="10" fill="#0d1117"/>
+<circle cx="22" cy="18.0" r="6" fill="#ff5f57"/>
+<circle cx="42" cy="18.0" r="6" fill="#febc2e"/>
+<circle cx="62" cy="18.0" r="6" fill="#28c840"/>
+<g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#d7dae0" xml:space="preserve">
+<text x="18" y="48"><tspan fill="#7ee787">$</tspan><tspan> ceynox-watch --inspect npm:puppeteer</tspan></text>
+<text x="18" y="67"><tspan>ceynox-watch: installing npm:puppeteer in a throwaway node:lts-slim container (docker)</tspan></text>
+<text x="18" y="86"><tspan fill="#7d8590">   0.000s</tspan><tspan>  </tspan><tspan fill="#79c0ff">exec </tspan><tspan>  env node /usr/local/bin/npm install --no-audit --no-fund --no-update-notifier…</tspan></text>
+<text x="18" y="105"><tspan fill="#7d8590">   0.000s</tspan><tspan>  </tspan><tspan fill="#79c0ff">exec </tspan><tspan>  node /usr/local/bin/npm install --no-audit --no-fund --no-update-notifier --l…</tspan></text>
+<text x="18" y="124"><tspan fill="#7d8590">   0.183s</tspan><tspan>  </tspan><tspan fill="#7ee787">net  </tspan><tspan>  registry.npmjs.org:443 (104.16.4.34)  tcp, https</tspan><tspan fill="#7d8590">  node</tspan></text>
+<text x="18" y="143"><tspan fill="#7d8590">   2.302s</tspan><tspan>  </tspan><tspan fill="#79c0ff">exec </tspan><tspan>    sh -c 'node install.mjs'</tspan><tspan fill="#7d8590">  [npm:puppeteer]</tspan></text>
+<text x="18" y="162"><tspan fill="#7d8590">   2.302s</tspan><tspan>  </tspan><tspan fill="#79c0ff">exec </tspan><tspan>      node install.mjs</tspan><tspan fill="#7d8590">  [npm:puppeteer]</tspan></text>
+<text x="18" y="181"><tspan fill="#7d8590">   2.351s</tspan><tspan>  </tspan><tspan fill="#7ee787">net  </tspan><tspan>  storage.googleapis.com:443 (74.125.24.207)  tcp, https</tspan><tspan fill="#7d8590">  node [npm:puppeteer]</tspan></text>
+<text x="18" y="200"></text>
+<text x="18" y="219"><tspan>added 27 packages in 14s</tspan></text>
+<text x="18" y="238"></text>
+<text x="18" y="257"><tspan fill="#7d8590">── ceynox-watch ──────────────────────────────────────────────────────────────</tspan></text>
+<text x="18" y="276"><tspan> </tspan><tspan font-weight="bold">npm:puppeteer in node:lts-slim</tspan><tspan>  14.1s  exit 0</tspan></text>
+<text x="18" y="295"></text>
+<text x="18" y="314"><tspan> </tspan><tspan font-weight="bold">PROCESSES</tspan><tspan>  5 started, 4 programs run</tspan></text>
+<text x="18" y="333"><tspan>   node ×2  sh</tspan></text>
+<text x="18" y="352"></text>
+<text x="18" y="371"><tspan> </tspan><tspan font-weight="bold">NETWORK</tspan><tspan>  2 destinations</tspan></text>
+<text x="18" y="390"><tspan>   registry.npmjs.org:443 (104.16.4.34)  tcp, https</tspan><tspan fill="#7d8590">  ×15</tspan><tspan>  ↑49.6 kB ↓7.4 MB</tspan><tspan fill="#7d8590">  node</tspan></text>
+<text x="18" y="409"><tspan>   storage.googleapis.com:443 (74.125.24.207)  tcp, https</tspan><tspan fill="#7d8590">  ×2</tspan><tspan>  ↑3.7 kB ↓331.7 MB</tspan><tspan fill="#7d8590">  node [npm:puppeteer]</tspan></text>
+<text x="18" y="428"></text>
+<text x="18" y="447"><tspan> </tspan><tspan font-weight="bold">FILES</tspan><tspan>  726 read, 3,157 written</tspan></text>
+<text x="18" y="466"><tspan>   written  ./node_modules (2,505)  /tmp/node-compile-cache (541)  ~/.npm (107)  ~/.cache (2)  ./package-lock.j…</tspan></text>
+<text x="18" y="485"><tspan>   read     /usr/local (664)  ./node_modules (30)  /usr/lib (8)  /proc (6)  /sys (5)  ~/.npm (4)  +8 more</tspan></text>
+<text x="18" y="504"></text>
+<text x="18" y="523"><tspan> </tspan><tspan fill="#7ee787">Nothing touched the credential, browser, history or startup locations in the catalog.</tspan></text>
+</g></svg>

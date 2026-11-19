@@ -11,11 +11,13 @@
 
 <p align="center">
   <b>See what a command really does on your machine.</b><br>
-  Every program it starts, every host it talks to, every credential it touches.
+  Every program it starts, every host it talks to, every credential it touches.<br>
+  For package installs, build scripts and AI coding agents.
 </p>
 
 <p align="center">
   <a href="https://github.com/CeyNova-Labs/ceynox-watch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/CeyNova-Labs/ceynox-watch/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/CeyNova-Labs/ceynox-watch/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/CeyNova-Labs/ceynox-watch?label=release"></a>
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
   <img alt="Platforms: Linux and macOS" src="https://img.shields.io/badge/platforms-Linux%20%7C%20macOS-informational">
   <img alt="Written in Rust, no unsafe in user space" src="https://img.shields.io/badge/rust-no%20unsafe%20in%20user%20space-orange">
@@ -23,11 +25,12 @@
 
 <p align="center">
   <a href="#install">Install</a> ·
-  <a href="#usage">Usage</a> ·
-  <a href="#inspect-a-package-before-you-install-it">Inspect a package</a> ·
+  <a href="#watch-a-command">Watch</a> ·
+  <a href="#inspect-a-package-before-you-install-it">Inspect</a> ·
+  <a href="#compare-with-last-time">Compare</a> ·
   <a href="#in-ci">CI</a> ·
+  <a href="#share-a-run">Report</a> ·
   <a href="#what-is-flagged">What is flagged</a> ·
-  <a href="#platforms">Platforms</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#limits">Limits</a>
 </p>
@@ -53,7 +56,20 @@ ceynox-watch shows; it does not block, and it does not decide what is malicious.
 > [!NOTE]
 > **Status: early.** It runs on Linux and macOS. The two work differently and macOS sees less; [Platforms](#platforms) has the comparison.
 
+## What you can do with it
+
+| | | |
+|---|---|---|
+| **Watch** a command, and everything it starts | `ceynox-watch -- npm install` | [more](#watch-a-command) |
+| **Watch an AI coding agent** that is already running | `ceynox-watch --pid "$(pgrep -n claude)"` | [more](#watch-a-command) |
+| **Inspect** a package in a throwaway container, before it is on your machine | `ceynox-watch --inspect npm:some-package` | [more](#inspect-a-package-before-you-install-it) |
+| **Compare** an install with the last time you ran it | `ceynox-watch --baseline install.json -- npm ci` | [more](#compare-with-last-time) |
+| **Fail a build** when an install starts doing something new | `uses: CeyNova-Labs/ceynox-watch@v0.2.0` | [more](#in-ci) |
+| **Share** a run as one HTML page, or Markdown | `ceynox-watch --report run.html -- make` | [more](#share-a-run) |
+
 ## Usage
+
+### Watch a command
 
 ```sh
 ceynox-watch -- <command> [args...]      # run a command and watch it
@@ -78,23 +94,6 @@ ceynox-watch --view /tmp/session.jsonl --follow         # terminal 2
 
 Each line names the process that did it and, where it can be told, the package that process runs for: `[npm:…]` and `[pypi:…]` for install scripts and builds, `[crate:…]` for Cargo build scripts, and `[npx:…]` or `[uvx:…]` for a package fetched and run in one go, which is how AI agents start most MCP servers.
 
-| Option | |
-|---|---|
-| `-q`, `--quiet` | no live output, only the summary |
-| `-v`, `--verbose` | also show every file opened |
-| `--no-summary` | no summary at the end |
-| `--json <file>` | also write every event as JSON, one per line (`-` for standard output with `--pid` or `--all`) |
-| `--report <file>` | also write the run as a page to share: `.html` or `.md` |
-| `--write-baseline <file>` | save what this run did, to compare later runs with |
-| `--baseline <file>` | say what this run did that an earlier one did not |
-| `--fail-on flagged\|new` | exit with status 3 when the command succeeded but touched the catalog (`flagged`) or did something the baseline does not have (`new`) |
-| `--inspect <package>` | install an npm or PyPI package in a throwaway container and watch that |
-| `--image <image>` | with `--inspect`: the container image to install in |
-| `--color auto\|always\|never` | `NO_COLOR` is honored |
-| `--hosts` | macOS: show addresses and host names of connections (asks `sudo`; see [Platforms](#platforms)) |
-| `--view <file>` | show a file written with `--json`; add `--follow` to keep up with one being written |
-| `--buffer-mb <n>` | Linux: kernel event buffer size, default 16 |
-
 ### Inspect a package before you install it
 
 ```sh
@@ -102,7 +101,11 @@ ceynox-watch --inspect npm:some-package@1.2.3
 ceynox-watch --inspect pypi:some-package
 ```
 
-This installs the package somewhere that is not your machine and shows what the install did. A container is made for it with Docker (Podman is used when Docker is absent, and has to run as root), the install runs in it as an unprivileged user with an empty home directory, and the container is removed afterwards. The watching is done from inside by the Linux build of ceynox-watch, so the record has full Linux detail on macOS too.
+<p align="center">
+  <img src="docs/inspect.svg" alt="ceynox-watch inspecting the npm package puppeteer in a container. Its install script connects to storage.googleapis.com and downloads 331.7 MB." width="900">
+</p>
+
+This installs the package somewhere that is not your machine and shows what the install did. Above, a browser-automation package turns out to fetch 331.7 MB from a second host while installing: documented and harmless, and now you have seen it. A container is made for it with Docker (Podman is used when Docker is absent, and has to run as root), the install runs in it as an unprivileged user with an empty home directory, and the container is removed afterwards. The watching is done from inside by the Linux build of ceynox-watch, so the record has full Linux detail on macOS too.
 
 Installing is not all a package does. Put a command after `--` to run it in the same container once the install has finished, in the same record:
 
@@ -121,12 +124,11 @@ ceynox-watch --write-baseline install.json -- npm ci        # once
 ceynox-watch --baseline install.json -- npm ci              # every time after
 ```
 
-```
- NEW SINCE install.json  3
-   flagged      read ~/.aws/credentials (AWS credentials) by node [npm:some-package]
-   destination  203.0.113.9:443
-   program      node [npm:some-package]
-```
+<p align="center">
+  <img src="docs/compare.svg" alt="ceynox-watch comparing an install with an earlier one. Three programs run by a package's install script are listed as new since the baseline, and the run fails." width="900">
+</p>
+
+Here the earlier install ran no install script and this one does, so the three programs it runs are new. A credential read or a host that was not contacted before is listed the same way.
 
 A baseline is a small JSON file of four lists: programs run, hosts contacted, catalog locations touched, and areas written to. Process ids, timings, counts and temporary names are left out, so two runs of the same install compare equal and the file can be committed. Hosts are compared by name, since the addresses behind a name change. `--baseline` also accepts a recording made with `--json`.
 
@@ -169,6 +171,37 @@ The HTML page is one file with nothing to load, so it can be attached to an issu
 ```sh
 ceynox-watch -- sh -c 'curl -fsSL https://example.com/install.sh | sh'
 ```
+
+### All options
+
+| Watching | |
+|---|---|
+| `-- <command>` | run a command and watch it |
+| `--pid <pid>[,<pid>...]` | Linux: watch processes that are already running |
+| `--all` | Linux: watch the whole machine |
+| `--inspect <package>` | install an npm or PyPI package in a throwaway container and watch that |
+| `--image <image>` | with `--inspect`: the container image to install in |
+| `--hosts` | macOS: show addresses and host names of connections (asks `sudo`; see [Platforms](#platforms)) |
+| `--buffer-mb <n>` | Linux: kernel event buffer size, default 16 |
+
+| On the terminal | |
+|---|---|
+| `-q`, `--quiet` | no live output, only the summary |
+| `-v`, `--verbose` | also show every file opened |
+| `--no-summary` | no summary at the end |
+| `--color auto\|always\|never` | `NO_COLOR` is honored |
+
+| To a file, and back | |
+|---|---|
+| `--json <file>` | also write every event as JSON, one per line (`-` for standard output with `--pid` or `--all`) |
+| `--view <file>` | show a file written with `--json`; add `--follow` to keep up with one being written |
+| `--report <file>` | also write the run as a page to share: `.html` or `.md` |
+
+| Comparing | |
+|---|---|
+| `--write-baseline <file>` | save what this run did, to compare later runs with |
+| `--baseline <file>` | say what this run did that an earlier one did not |
+| `--fail-on flagged\|new` | exit with status 3 when the command succeeded but touched the catalog (`flagged`) or did something the baseline does not have (`new`) |
 
 ### Privileges and exit status
 
