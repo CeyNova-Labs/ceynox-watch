@@ -1,7 +1,6 @@
 name: ceynox-watch
-description: >-
-  See what a build step really does: the programs it starts, the hosts it
-  talks to, the credentials it touches. Optionally fail when that changes.
+# The Marketplace allows a description fewer than 125 characters.
+description: "See what a build step really does: programs started, hosts contacted, credentials touched. Fail when that changes."
 author: CeyNova Labs
 branding:
   icon: eye
@@ -26,7 +25,7 @@ inputs:
     description: Directory to run the command in.
     default: ""
   version:
-    description: The ceynox-watch release to use, such as v0.2.1. Defaults to the version of this action.
+    description: The ceynox-watch release to use, such as v0.2.2. Defaults to the version of this action.
     default: ""
   binary:
     description: Path of a ceynox-watch binary to use instead of downloading a release.
