@@ -17,6 +17,8 @@ Out of scope, however well made: anything that blocks, stops, quarantines or oth
 | `crates/ceynox-watch-common` | record layouts shared by the two |
 | `dev/` | the build and test container, and the end-to-end tests |
 | `demo/` | a harmless package for demonstrations |
+| `action.yml` | the GitHub Action, a thin wrapper around the program |
+| `docs/gallery` | records of well-known packages being installed, made by `dev/gallery.sh` |
 
 ## Building
 
@@ -41,6 +43,8 @@ dev/integration-macos.sh          # end to end on macOS, after cargo build --rel
 cargo clippy --all-targets
 cargo fmt --all --check
 ```
+
+`--inspect` and the GitHub Action need a container runtime and a runner, so they are exercised by the `build and end-to-end (Linux)` job in CI. To try `--inspect` from macOS during development, build the static Linux binary in the container and point `CEYNOX_WATCH_LINUX_BINARY` at it.
 
 The end-to-end tests run real commands (a shell, `curl`, `npm install`) under ceynox-watch on the container's kernel and check what is reported. A change to the kernel programs or the loader should come with a case there.
 

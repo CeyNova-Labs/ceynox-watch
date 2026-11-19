@@ -41,6 +41,8 @@ pub type Compared<'a> = Option<(&'a Diff, &'a str)>;
 /// the rest.
 const MAX_ROWS: usize = 200;
 const MAX_TREE: usize = 400;
+/// The Markdown report is read in pull requests; its tree is kept short.
+const MAX_TREE_MARKDOWN: usize = 60;
 
 fn exit_text(exit: Option<Exit>) -> Option<String> {
     Some(match exit? {
@@ -183,15 +185,20 @@ pub fn markdown(report: &Report, header: &Header, style: &Style, compared: Compa
         out.push('\n');
     }
 
-    let programs = report.programs();
-    if !programs.is_empty() {
-        let names: Vec<String> = programs
-            .iter()
-            .take(40)
-            .map(|(n, c)| if *c > 1 { format!("{} ×{c}", code(&clean(n))) } else { code(&clean(n)) })
-            .collect();
-        let more = if programs.len() > 40 { format!(" +{} more", programs.len() - 40) } else { String::new() };
-        let _ = writeln!(out, "### Programs\n\n{}{more}\n", names.join(", "));
+    // What ran, as a tree: which program started which, and for which
+    // package. In a fenced block, where only a backtick could do harm.
+    let execed: Vec<usize> = (0..report.procs.len()).filter(|&i| report.procs[i].execed).collect();
+    if !execed.is_empty() {
+        let _ = writeln!(out, "### Programs ({} run)\n\n```", thousands(report.execs as usize));
+        for &i in execed.iter().take(MAX_TREE_MARKDOWN) {
+            let pkg = report.package(i).map(|p| format!("  [{}]", clean(&p))).unwrap_or_default();
+            let line = format!("{}{}{pkg}", "  ".repeat(report.depth(i).min(12)), clean(&report.procs[i].command()));
+            let _ = writeln!(out, "{}", line.replace('`', "'"));
+        }
+        if execed.len() > MAX_TREE_MARKDOWN {
+            let _ = writeln!(out, "+{} more", thousands(execed.len() - MAX_TREE_MARKDOWN));
+        }
+        let _ = writeln!(out, "```\n");
     }
 
     let _ = writeln!(out, "### Files\n");
@@ -303,13 +310,14 @@ pub fn html(report: &Report, header: &Header, style: &Style, compared: Compared<
     if let Some((diff, _)) = compared {
         tile(&mut out, &thousands(diff.new.len()), "new since last time", !diff.new.is_empty());
     }
-    tile(&mut out, &thousands(report.execs as usize), "programs run", false);
-    tile(&mut out, &thousands(peers.len()), "destinations", false);
+    let one = |n: usize, one: &'static str, many: &'static str| if n == 1 { one } else { many };
+    tile(&mut out, &thousands(report.execs as usize), one(report.execs as usize, "program run", "programs run"), false);
+    tile(&mut out, &thousands(peers.len()), one(peers.len(), "destination", "destinations"), false);
     if measured {
         tile(&mut out, &size(sent), "sent over TCP", false);
     }
-    tile(&mut out, &thousands(report.written.len()), "files written", false);
-    tile(&mut out, &thousands(report.read.len()), "files read", false);
+    tile(&mut out, &thousands(report.written.len()), one(report.written.len(), "file written", "files written"), false);
+    tile(&mut out, &thousands(report.read.len()), one(report.read.len(), "file read", "files read"), false);
     out.push_str("</div>");
 
     // Findings.
@@ -569,6 +577,9 @@ mod tests {
         assert!(text.contains("### New since `base\\|line.json` (1)\n\n- **destination** `x.ngrok-free.app:443`"));
         assert!(text.contains("2 things seen then, not seen now."));
         assert!(text.contains("| 4.2 MB | 300 B |"));
+        assert!(text.contains(
+            "### Programs (2 run)\n\n```\nnpm install\n  node '<img src=x onerror=alert(1)>.js' a|b'c  [npm:evil]\n```"
+        ));
         // Every table row has the same number of cells as its header.
         for line in text.lines().filter(|l| l.starts_with("| read")) {
             assert_eq!(line.replace("\\|", "").matches('|').count(), 5, "{line}");

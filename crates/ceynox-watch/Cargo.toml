@@ -22,4 +22,4 @@ signal-hook = { version = "0.4", default-features = false }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 aya = "0.16"
-ceynox-watch-common = { version = "0.1.0", path = "../ceynox-watch-common" }
+ceynox-watch-common = { version = "0.2.0", path = "../ceynox-watch-common" }
