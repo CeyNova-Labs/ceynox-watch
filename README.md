@@ -18,6 +18,8 @@
 <p align="center">
   <a href="https://github.com/CeyNova-Labs/ceynox-watch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/CeyNova-Labs/ceynox-watch/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/CeyNova-Labs/ceynox-watch/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/CeyNova-Labs/ceynox-watch?label=release"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/CeyNova-Labs/ceynox-watch"><img alt="OpenSSF Scorecard" src="https://api.scorecard.dev/projects/github.com/CeyNova-Labs/ceynox-watch/badge"></a>
+  <a href="https://www.bestpractices.dev/projects/16928"><img alt="OpenSSF Best Practices" src="https://www.bestpractices.dev/projects/16928/badge"></a>
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
   <img alt="Platforms: Linux and macOS" src="https://img.shields.io/badge/platforms-Linux%20%7C%20macOS-informational">
   <img alt="Written in Rust, no unsafe in user space" src="https://img.shields.io/badge/rust-no%20unsafe%20in%20user%20space-orange">
