@@ -34,7 +34,8 @@
   <a href="#share-a-run">Report</a> ·
   <a href="#what-is-flagged">What is flagged</a> ·
   <a href="#how-it-works">How it works</a> ·
-  <a href="#limits">Limits</a>
+  <a href="#limits">Limits</a> ·
+  <a href="#maturity">Maturity</a>
 </p>
 
 Put it in front of `pip install`, `npm install`, a build script, or an AI coding agent:
@@ -56,7 +57,7 @@ ceynox-watch -- npm install
 ceynox-watch shows; it does not block, and it does not decide what is malicious. `npm` reading `~/.npmrc` is `npm` doing its job, and it is listed all the same. What you get is the record, with the process that did each thing and how that process came to run.
 
 > [!NOTE]
-> **Status: early.** It runs on Linux and macOS. The two work differently and macOS sees less; [Platforms](#platforms) has the comparison.
+> **Status: early.** It runs on Linux and macOS. The two work differently and macOS sees less; [Platforms](#platforms) has the comparison. [Maturity](#maturity) says plainly how new it is and how it was built.
 
 ## What you can do with it
 
@@ -380,6 +381,17 @@ Worth knowing before you rely on it:
 - **A process running as root can interfere** with any tracing tool, this one included. ceynox-watch is built to tell you what ordinary untrusted code does, not to withstand an attacker who already owns the machine.
 - **Under extreme load events can be dropped.** When that happens the output says so and says how many; it never fails silently. `--buffer-mb` raises the limit.
 - **Files already open are not opens.** A descriptor inherited from outside the watched tree is used without an open being seen.
+
+## Maturity
+
+Things you are entitled to know before running a tool that asks for root:
+
+- **It is new.** The first release was in November 2026. It has few users so far, and real use will find what tests did not.
+- **One team maintains it,** and so far nobody outside that team has contributed code or reviewed it. It has not had an independent security audit.
+- **It was written with substantial AI assistance.** What keeps it honest is not who typed it but what checks it: tests that run real commands on a real kernel on every change, on Linux and macOS, and fuzzing of every parser that reads input the tool does not control. Not every sentence in this README is covered by a test, and when a claim has turned out wrong it has been corrected.
+- **It has been run on a handful of systems:** Ubuntu 26.04 on x86-64, Ubuntu 24.04 on arm64, Docker Desktop's Linux kernel on arm64, and macOS 15 and 27 on Apple silicon. The requirements allow older kernels and Intel Macs, and it is built for them, but it has not been run there by us. [Reports from other systems](https://github.com/CeyNova-Labs/ceynox-watch/issues/2) are welcome, working or not.
+
+So treat it as you would any young tool with privileges: read [The tool's own security](#the-tools-own-security), try it first on a machine you can afford to, and [tell us](https://github.com/CeyNova-Labs/ceynox-watch/issues) what breaks. An outside review is the thing this project most lacks; if that is your kind of work, [SECURITY.md](SECURITY.md) says how to reach us.
 
 ## JSON
 
