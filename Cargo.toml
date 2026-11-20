@@ -7,7 +7,7 @@ members = ["crates/ceynox-watch", "crates/ceynox-watch-common"]
 exclude = ["crates/ceynox-watch-ebpf", "fuzz"]
 
 [workspace.package]
-version = "0.2.3"
+version = "0.2.4"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/CeyNova-Labs/ceynox-watch"

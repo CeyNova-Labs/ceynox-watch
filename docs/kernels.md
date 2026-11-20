@@ -45,6 +45,6 @@ Not run by us: Intel Macs.
 
 ## Known to matter
 
-- **Releases up to 0.2.3 do not start on kernel 6.8 or older.** The kernel refused one program, whose length check sat where older verifiers could not follow it. 0.2.3 was seen to fail on 6.8, 6.1 and 5.15 and to work on 6.12. Fixed on `main`, which the tables above are for; it will be in the release after 0.2.3.
+- **Releases up to 0.2.3 do not start on kernel 6.8 or older.** The kernel refused one program, whose length check sat where older verifiers could not follow it. 0.2.3 was seen to fail on 6.8, 6.1 and 5.15 and to work on 6.12. Fixed in 0.2.4, which the tables above are for.
 - **A host that redirects DNS to another port hides names.** Names come from DNS replies on port 53. Where a firewall rule rewrites that port (some virtual machine setups do), connections show addresses only.
 - **Not tried:** Arch, Debian 11, kernels before 5.14, and anything not listed.
