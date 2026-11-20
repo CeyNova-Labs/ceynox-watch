@@ -453,6 +453,12 @@ fn package_of(p: &Proc) -> Option<String> {
             };
             return Some(format!("npm:{name}"));
         }
+        // RubyGems building a native extension: it runs the gem's
+        // `extconf.rb`, then make and a compiler, inside the gem's own
+        // directory, .../gems/<name>-<version>/ext/...
+        if let Some(name) = gem_of(cwd) {
+            return Some(format!("gem:{name}"));
+        }
         // pip building a source distribution: /tmp/pip-install-x/<name>_<hash>
         if let Some(at) = cwd.find("/pip-install-") {
             let name = cwd[at + 1..].split('/').nth(1)?;
@@ -479,6 +485,23 @@ fn package_of(p: &Proc) -> Option<String> {
         return Some(format!("crate:{name}"));
     }
     run_from_registry(&p.argv)
+}
+
+/// The gem whose directory `cwd` is in: the `<name>` of the last
+/// `/gems/<name>-<version>` in it. Gem names may contain hyphens and
+/// digits, so the version is taken to start at the first hyphen that is
+/// followed by a number and a dot.
+fn gem_of(cwd: &str) -> Option<&str> {
+    let (_, rest) = cwd.rsplit_once("/gems/")?;
+    let dir = rest.split('/').next()?;
+    let bytes = dir.as_bytes();
+    let at = (1..bytes.len()).find(|&i| {
+        bytes[i] == b'-' && {
+            let digits = bytes[i + 1..].iter().take_while(|b| b.is_ascii_digit()).count();
+            digits > 0 && bytes.get(i + 1 + digits) == Some(&b'.')
+        }
+    })?;
+    Some(&dir[..at])
 }
 
 /// A package fetched and run in one go: `npx <package>`, `uvx <package>`
@@ -685,6 +708,25 @@ mod tests {
             package_of(&p("/w/target/debug/build/openssl-sys-1a2b3c/build-script-build", "/w")).as_deref(),
             Some("crate:openssl-sys")
         );
+        // RubyGems, from a real `gem install bcrypt` with Ruby 3.3.
+        let gems = "/home/sam/.local/share/gem/ruby/3.3.0/gems";
+        assert_eq!(
+            package_of(&p("/usr/bin/ruby3.3", &format!("{gems}/bcrypt-3.1.22/ext/mri"))).as_deref(),
+            Some("gem:bcrypt")
+        );
+        assert_eq!(
+            package_of(&p("/usr/bin/make", &format!("{gems}/net-http2-0.18.5/ext"))).as_deref(),
+            Some("gem:net-http2")
+        );
+        assert_eq!(
+            package_of(&p("/usr/bin/cc1", "/usr/local/bundle/gems/nokogiri-1.18.3-x86_64-linux/ext/nokogiri"))
+                .as_deref(),
+            Some("gem:nokogiri")
+        );
+        // An ordinary Ruby script somewhere else, and a folder that only looks like one.
+        assert_eq!(package_of(&p("/usr/bin/ruby3.3", "/home/sam/app")), None);
+        assert_eq!(package_of(&p("/usr/bin/ruby3.3", "/home/sam/gems/notes")), None);
+        assert_eq!(package_of(&p("/usr/bin/ruby3.3", "/home/sam/gems/my-app")), None);
         let hook = |cwd: &str| Proc {
             argv: vec![
                 "python3".into(),

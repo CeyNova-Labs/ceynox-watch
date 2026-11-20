@@ -342,16 +342,34 @@ impl Sensor {
 }
 
 /// Open a packet socket that the `dns_replies` filter narrows to DNS
-/// replies. Best effort: without it, everything else still works.
+/// replies. Best effort: without it everything else still works, and
+/// connections are shown by address. Says so, because a missing name
+/// otherwise looks like a program that looked nothing up.
 fn dns_socket(ebpf: &mut Ebpf) -> Option<OwnedFd> {
-    let filter: &mut SocketFilter = program(ebpf, "dns_replies").ok()?;
-    filter.load().ok()?;
-    let sock = socket(AddressFamily::PACKET, SocketType::DGRAM, Some(eth::ALL)).ok()?;
-    filter.attach(&sock).ok()?;
+    match open_dns_socket(ebpf) {
+        Ok(sock) => Some(sock),
+        Err(why) => {
+            eprintln!("ceynox-watch: host names will not be shown on this kernel ({why})");
+            None
+        }
+    }
+}
+
+fn open_dns_socket(ebpf: &mut Ebpf) -> Result<OwnedFd, String> {
+    // The kernel's reasons can run to pages; the last line is the verdict.
+    let last = |e: &dyn std::fmt::Display| {
+        let text = e.to_string();
+        text.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").trim().chars().take(160).collect::<String>()
+    };
+    let filter: &mut SocketFilter = program(ebpf, "dns_replies").map_err(|e| last(&e))?;
+    filter.load().map_err(|e| format!("the filter was refused: {}", last(&e)))?;
+    let sock = socket(AddressFamily::PACKET, SocketType::DGRAM, Some(eth::ALL))
+        .map_err(|e| format!("no packet socket: {e}"))?;
+    filter.attach(&sock).map_err(|e| format!("the filter could not be attached: {}", last(&e)))?;
     // The socket saw every packet between being created and being filtered.
     let mut scratch = [0u8; 2048];
     while recv(&sock, &mut scratch[..], RecvFlags::DONTWAIT).is_ok() {}
-    Some(sock)
+    Ok(sock)
 }
 
 fn nanos(t: &Timespec) -> i128 {
@@ -386,8 +404,10 @@ fn take(ebpf: &mut Ebpf, name: &str) -> Result<aya::maps::Map, SensorError> {
 
 fn attach_error(hook: &str, err: impl std::fmt::Display) -> SensorError {
     SensorError::new(format!(
-        "could not attach to {hook}: {err}. ceynox-watch needs Linux 5.11 or newer on \
-         x86-64 and 6.0 or newer on arm64"
+        "could not attach to {hook}: {err}. ceynox-watch needs a kernel that lets programs \
+         attach to kernel functions. On x86-64 it has been run from Linux 5.14 up; on arm64 \
+         it needs a kernel newer than 6.1 that is built with function tracing. docs/kernels.md in the repository \
+         lists the kernels it has been run on"
     ))
 }
 

@@ -39,7 +39,7 @@ RUN set -eux; \
 ENV CARGO_TARGET_DIR=/target
 
 # Package managers to watch in the integration tests and the demo.
-RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm python3-pip python3-venv \
+RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm python3-pip python3-venv ruby ruby-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # For `cargo clippy` and `cargo fmt --check`, as CI runs them.

@@ -164,6 +164,10 @@ has "$T/pip.err" "the build is attributed to its package" "[pypi:sneaky-pip]"
 has "$T/pip.err" "its reads are flagged" "READ   ~/.aws/credentials  AWS credentials (credentials)  python3 [pypi:sneaky-pip]" "READ   ~/.ssh/id_ed25519  SSH private key"
 has "$T/pip.err" "its connection is shown by name" "example.com:443" "pypi.org:443"
 
+echo "gem install of a gem with a native extension"
+su dev -c "cd $H/plain && ceynox-watch --color never -- gem install --user-install --no-document bcrypt" > /dev/null 2> "$T/gem.err" || fail "gem install"
+has "$T/gem.err" "the build is attributed to its gem" "extconf.rb  [gem:bcrypt]"
+
 echo "attach to a running process"
 su dev -c "sh -c 'while true; do cat $H/plain/.env >/dev/null; sleep 0.2; done' & echo \$! > $T/loop.pid"
 ceynox-watch --color never --pid "$(cat "$T/loop.pid")" > "$T/p.out" 2> "$T/p.err" &

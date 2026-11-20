@@ -137,6 +137,16 @@ static RULES: &[Rule] = &[
     flag(Root, "/var/run/secrets/**", Open, Credentials, "mounted secret"),
     flag(Root, "/run/secrets/**", Open, Credentials, "mounted secret"),
 
+    // ---- databases and data tools ----
+    flag(Home, ".pgpass", Open, Credentials, "PostgreSQL passwords"),
+    flag(Home, ".my.cnf", Open, Credentials, "MySQL client password"),
+    flag(Home, ".snowsql/config", Open, Credentials, "Snowflake credentials"),
+    flag(Home, ".databrickscfg", Open, Credentials, "Databricks tokens"),
+    flag(Home, ".config/rclone/rclone.conf", Open, Credentials, "rclone storage credentials"),
+    flag(Home, ".s3cfg", Open, Credentials, "s3cmd access keys"),
+    flag(Home, ".boto", Open, Credentials, "boto access keys"),
+    flag(Home, ".config/sops/age/keys.txt", Open, Credentials, "age private keys (sops)"),
+
     // ---- package registries ----
     flag(Home, ".npmrc", Open, Credentials, "npm token"),
     flag(Home, ".yarnrc.yml", Open, Credentials, "Yarn config (registry token)"),
@@ -648,6 +658,20 @@ mod tests {
 
     #[test]
     fn credentials_and_env_files() {
+        for (path, what_it_is) in [
+            ("/home/sam/.pgpass", "PostgreSQL passwords"),
+            ("/home/sam/.my.cnf", "MySQL client password"),
+            ("/home/sam/.snowsql/config", "Snowflake credentials"),
+            ("/home/sam/.databrickscfg", "Databricks tokens"),
+            ("/Users/sam/.config/rclone/rclone.conf", "rclone storage credentials"),
+            ("/home/sam/.s3cfg", "s3cmd access keys"),
+            ("/home/sam/.boto", "boto access keys"),
+            ("/home/sam/.config/sops/age/keys.txt", "age private keys (sops)"),
+        ] {
+            assert_eq!(what(path, false), Some(what_it_is), "{path}");
+        }
+        // The same names outside a home directory are something else.
+        assert_eq!(what("/srv/app/.pgpass", false), None);
         assert_eq!(what("/Users/sam/.aws/credentials", false), Some("AWS credentials"));
         assert_eq!(what("/root/.npmrc", false), Some("npm token"));
         assert_eq!(what("/srv/homes/dana/.config/gh/hosts.yml", false), Some("GitHub CLI token"));
