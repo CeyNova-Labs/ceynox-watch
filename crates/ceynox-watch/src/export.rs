@@ -149,6 +149,17 @@ pub fn markdown(report: &Report, header: &Header, style: &Style, compared: Compa
         }
     }
 
+    let rows = render::packages(report, style);
+    if !rows.is_empty() {
+        let _ =
+            writeln!(out, "### Packages that ran code ({})\n\n| Package | Did | Flagged |\n|---|---|---:|", rows.len());
+        for row in rows.iter().take(MAX_ROWS) {
+            let flagged = if row.flagged > 0 { format!("**{}**", row.flagged) } else { String::new() };
+            let _ = writeln!(out, "| {} | {} | {flagged} |", code(&row.name), render::package_facts(row).join(", "));
+        }
+        out.push('\n');
+    }
+
     let peers = peers(report);
     let _ = writeln!(out, "### Network ({})\n", count(peers.len(), "destination"));
     if !peers.is_empty() {
@@ -383,6 +394,30 @@ pub fn html(report: &Report, header: &Header, style: &Style, compared: Compared<
             let _ = write!(out, "<p class=\"dim\">{} seen then, not seen now.</p>", count(diff.gone, "thing"));
         }
         out.push_str("</div></section>");
+    }
+
+    // Packages.
+    let rows = render::packages(report, style);
+    if !rows.is_empty() {
+        let _ = write!(
+            out,
+            "<section><h2>Packages that ran code<small>{}</small></h2><div class=\"scroll\"><table>",
+            rows.len()
+        );
+        for row in rows.iter().take(MAX_ROWS) {
+            let flagged = if row.flagged > 0 {
+                format!("<span class=\"flag\">{} flagged</span>", row.flagged)
+            } else {
+                String::new()
+            };
+            let _ = write!(
+                out,
+                "<tr><td><code>{}</code></td><td class=\"dim\">{}</td><td>{flagged}</td></tr>",
+                esc(&row.name),
+                esc(&render::package_facts(row).join(" · "))
+            );
+        }
+        out.push_str("</table></div></section>");
     }
 
     // Network.

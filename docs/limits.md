@@ -21,6 +21,7 @@ What ceynox-watch does not do or cannot see.
 
 - **The container is empty.** No credentials are in it and none are planted, so a package that only acts when it finds something to take shows less than it would on a developer's machine.
 - **A container is not a virtual machine.** It shares your kernel and your network. Do not use it for something built to break out of containers.
+- **A lockfile is installed from two files.** Only `package-lock.json` and `package.json` (or the one `requirements.txt`) are copied in. Dependencies on local paths, private registries or files beside them will not resolve.
 - **Installing is not using.** A Python wheel runs none of its own code until imported. Add a command after `--` to watch that too.
 
 ## Baselines

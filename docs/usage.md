@@ -7,7 +7,8 @@
 | `-- <command>` | run a command and watch it |
 | `--pid <pid>[,<pid>...]` | Linux: watch processes that are already running |
 | `--all` | Linux: watch the whole machine |
-| `--inspect <package>` | install an npm or PyPI package in a throwaway container and watch that |
+| `--inspect <package>` | install an npm or PyPI package in a throwaway container and watch that. Also takes the path of a `package-lock.json` or a `requirements.txt` |
+| `--against <package>` | with `--inspect`: install this one too, and list what the inspected one does that it does not |
 | `--image <image>` | with `--inspect`: the container image to install in |
 | `--hosts` | macOS: show addresses and host names of connections (asks `sudo`) |
 | `--buffer-mb <n>` | Linux: kernel event buffer size, default 16 |
@@ -58,7 +59,7 @@ A baseline is a small JSON file of four lists: programs run, hosts contacted, ca
 ## The GitHub Action
 
 ```yaml
-- uses: CeyNova-Labs/ceynox-watch@v0.2.3
+- uses: CeyNova-Labs/ceynox-watch@v0.2.4
   id: watch
   with:
     run: npm ci

@@ -980,13 +980,26 @@ pub fn view(file: &std::ffi::OsStr, follow: bool, opts: Options) -> i32 {
 /// Finish a run that was recorded elsewhere and has already been shown:
 /// the comparison, the report, the baseline and `--fail-on`, from the
 /// recording in `file`. `home` is the home directory the command had.
-pub fn conclude_recording(file: &std::path::Path, home: &str, title: String, code: i32, opts: Options) -> i32 {
-    let baseline = match load_baseline(&opts, Some(home.to_string())) {
-        Ok(b) => b,
-        Err(e) => {
-            say(e);
-            return FAILURE;
-        }
+///
+/// `compared` is a run to compare with that the caller already has, in
+/// place of one named with `--baseline`.
+pub fn conclude_recording(
+    file: &std::path::Path,
+    home: &str,
+    title: String,
+    code: i32,
+    opts: Options,
+    compared: Option<(Baseline, String)>,
+) -> i32 {
+    let baseline = match compared {
+        Some(c) => Some(c),
+        None => match load_baseline(&opts, Some(home.to_string())) {
+            Ok(b) => b,
+            Err(e) => {
+                say(e);
+                return FAILURE;
+            }
+        },
     };
     let input = match File::open(file) {
         Ok(f) => f,
