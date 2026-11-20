@@ -453,9 +453,9 @@ pub fn on_open(ctx: FEntryContext) -> i32 {
     ev.comm = comm();
 
     // The length is bounded here, as the last thing before it is used and
-    // by an unsigned comparison, because that is where verifiers before
-    // Linux 6.11 need to see it: they lose track of a bound established
-    // earlier, across the calls above. `on_exec` does the same.
+    // by an unsigned comparison, because that is where older verifiers
+    // need to see it: Linux 6.8 and before lose track of a bound
+    // established earlier, across the calls above. `on_exec` does the same.
     let mut len = ev.path_len as usize;
     if len > PATH_CAP {
         len = PATH_CAP;
