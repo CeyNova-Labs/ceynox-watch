@@ -72,7 +72,7 @@ ceynox-watch traces nothing that could not be traced before. It makes the check 
 | [**Watch an AI agent**](#watch) that is already running | `ceynox-watch --pid "$(pgrep -n claude)"` |
 | [**Inspect**](#inspect-a-package-first) a package in a throwaway container | `ceynox-watch --inspect npm:some-package` |
 | [**Compare**](#compare-with-last-time) an install with last time | `ceynox-watch --baseline install.json -- npm ci` |
-| [**Fail a build**](#in-ci) when an install does something new | `uses: CeyNova-Labs/ceynox-watch@v0.2.3` |
+| [**Fail a build**](#in-ci) when an install does something new | `uses: CeyNova-Labs/ceynox-watch@v0.2.4` |
 | [**Share**](#share-a-run) a run as HTML or Markdown | `ceynox-watch --report run.html -- make` |
 
 ## Usage
@@ -125,7 +125,7 @@ A baseline is a small JSON file you can commit. Later runs list what they did th
 ### In CI
 
 ```yaml
-- uses: CeyNova-Labs/ceynox-watch@v0.2.3
+- uses: CeyNova-Labs/ceynox-watch@v0.2.4
   with:
     run: npm ci
     baseline: .github/ceynox-watch.json
@@ -193,7 +193,7 @@ Or take the archive for your system from the [releases page](https://github.com/
 gh attestation verify ceynox-watch-*.tar.gz --repo CeyNova-Labs/ceynox-watch
 ```
 
-- **Linux, x86-64:** run on kernels from 5.14 up. Needs BTF (`/sys/kernel/btf/vmlinux` exists). Release 0.2.3 does not start on kernel 6.8 or older; the fix is on `main`.
+- **Linux, x86-64:** run on kernels from 5.14 up. Needs BTF (`/sys/kernel/btf/vmlinux` exists).
 - **Linux, arm64:** a newer kernel, built with function tracing. 6.8 works, 6.1 does not. [docs/kernels.md](docs/kernels.md) lists what has been run.
 - **macOS:** Apple silicon or Intel. The binary is not signed by Apple; if you download it with a browser, clear the quarantine mark once with `xattr -d com.apple.quarantine ./ceynox-watch`.
 - **From source:** see [CONTRIBUTING.md](CONTRIBUTING.md).

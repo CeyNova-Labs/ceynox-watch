@@ -58,7 +58,7 @@ A baseline is a small JSON file of four lists: programs run, hosts contacted, ca
 ## The GitHub Action
 
 ```yaml
-- uses: CeyNova-Labs/ceynox-watch@v0.2.3
+- uses: CeyNova-Labs/ceynox-watch@v0.2.4
   id: watch
   with:
     run: npm ci
