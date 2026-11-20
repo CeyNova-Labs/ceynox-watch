@@ -200,6 +200,7 @@ static RULES: &[Rule] = &[
     // ---- password stores and keys ----
     flag(Home, ".gnupg/private-keys-v1.d/**", Open, Credentials, "GPG private key"),
     flag(Home, ".gnupg/secring.gpg", Open, Credentials, "GPG private keyring"),
+    flag(Home, "Library/Application Support/sops/age/keys.txt", Open, Credentials, "age private keys (sops)"),
     flag(Home, ".password-store/**", Open, Credentials, "pass password store"),
     flag(Home, ".local/share/keyrings/**", Open, Credentials, "desktop keyring"),
     flag(Home, "Library/Keychains/**", Open, Credentials, "macOS keychain"),
@@ -619,6 +620,10 @@ mod tests {
         assert_eq!(regex_escape("/Users/a.b (c)"), "/Users/a\\.b \\(c\\)");
         let pats = read_patterns("/Users/sam/");
         assert!(pats.contains(&"^/Users/sam/\\.aws/credentials$".to_string()));
+        assert!(pats.contains(&"^/Users/sam/\\.pgpass$".to_string()));
+        assert!(pats.contains(&"^/Users/sam/\\.config/rclone/rclone\\.conf$".to_string()));
+        assert!(pats.contains(&"^/Users/sam/\\.config/sops/age/keys\\.txt$".to_string()));
+        assert!(pats.contains(&"^/Users/sam/Library/Application Support/sops/age/keys\\.txt$".to_string()));
         assert!(pats.contains(&"^(/private)?/etc/shadow$".to_string()));
         assert!(pats.contains(&"/\\.env$".to_string()));
         assert!(pats.contains(&"/[^/]*\\.kdbx$".to_string()));
@@ -682,6 +687,23 @@ mod tests {
         assert_eq!(what("/work/secrets.kdbx", false), Some("KeePass database"));
         assert_eq!(what("/proc/41/environ", false), Some("another process's environment"));
         assert_eq!(what("/var/run/secrets/kubernetes.io/serviceaccount/token", false), Some("mounted secret"));
+        for (relative, description) in [
+            (".pgpass", "PostgreSQL passwords"),
+            (".config/rclone/rclone.conf", "rclone storage credentials"),
+            (".config/sops/age/keys.txt", "age private keys (sops)"),
+            ("Library/Application Support/sops/age/keys.txt", "age private keys (sops)"),
+        ] {
+            for home in ["/home/sam", "/Users/sam", "/srv/homes/dana"] {
+                let path = format!("{home}/{relative}");
+                for write in [false, true] {
+                    assert_eq!(
+                        c().open(&path, write),
+                        Some(Finding { category: Credentials, what: description }),
+                        "{path} (write={write})"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
@@ -741,6 +763,13 @@ mod tests {
             "/home/sam/.cache/pip/http/a",
             "/etc/resolv.conf",
             "/tmp/x",
+            "/work/project/.pgpass",
+            "/home/sam/.pgpass.example",
+            "/home/sam/.config/rclone/rclone.conf.example",
+            "/home/sam/.config/rclone/notes.txt",
+            "/home/sam/.config/sops/age/keys.txt.example",
+            "/home/sam/.config/sops/docs/keys.txt",
+            "/Users/sam/Library/Application Support/sops/age/README.md",
         ] {
             assert_eq!(what(p, false), None, "{p}");
             assert_eq!(what(p, true), None, "{p} (write)");
