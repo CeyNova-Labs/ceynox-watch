@@ -28,7 +28,9 @@ fn main() {
         Ok(Invocation::Run { command, opts }) => run::run_command(command, opts),
         Ok(Invocation::Attach { scope, opts }) => run::attach(scope, opts),
         Ok(Invocation::View { file, follow, opts }) => run::view(&file, follow, opts),
-        Ok(Invocation::Inspect { package, image, then, opts }) => inspect::run(&package, image.as_deref(), &then, opts),
+        Ok(Invocation::Inspect { package, against, image, then, opts }) => {
+            inspect::run(&package, against.as_deref(), image.as_deref(), &then, opts)
+        }
         Ok(Invocation::Sensor { scope, buffer_mb }) => run::sensor_main(scope, buffer_mb),
         Ok(Invocation::Exec { command }) => run::exec_main(command),
         Err(msg) => {

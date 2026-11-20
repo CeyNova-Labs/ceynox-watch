@@ -40,6 +40,9 @@ Options:
       --fail-on <what> exit with status 3 when the command itself succeeded
                        but something in the catalog was touched (flagged)
                        or something was not in the baseline (new)
+      --against <package>
+                       with --inspect: install this one too, and say what the
+                       inspected one does that it does not
       --image <image>  with --inspect: the container image to install in
       --color <when>   auto, always or never [default: auto]
       --hosts          macOS: show addresses and host names of connections.
@@ -120,6 +123,8 @@ pub enum Invocation {
     /// Install a package in a throwaway container, watched.
     Inspect {
         package: String,
+        /// Another package to install first and compare with.
+        against: Option<String>,
         image: Option<String>,
         /// A command to run in the container after the install.
         then: Vec<OsString>,
@@ -167,6 +172,7 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Invocation, Str
     let mut follow = false;
     let mut inspect: Option<String> = None;
     let mut image: Option<String> = None;
+    let mut against: Option<String> = None;
     let mut command: Vec<OsString> = Vec::new();
     let mut parser = lexopt::Parser::from_args(raw);
     let text = |e: lexopt::Error| e.to_string();
@@ -215,6 +221,7 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Invocation, Str
                 }
             }
             Long("inspect") => inspect = Some(parser.value().map_err(text)?.parse().map_err(text)?),
+            Long("against") => against = Some(parser.value().map_err(text)?.parse().map_err(text)?),
             Long("image") => image = Some(parser.value().map_err(text)?.parse().map_err(text)?),
             Long("all") => scope = Some(Scope::All),
             Long("view") => view = Some(parser.value().map_err(text)?),
@@ -251,11 +258,17 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Invocation, Str
     if opts.quiet && !opts.summary && !other_output {
         return Err("--quiet with --no-summary would show nothing; add --json, --report or --fail-on".into());
     }
-    if opts.fail_on_new && opts.baseline.is_none() {
-        return Err("--fail-on new needs something to compare with: add --baseline <file>".into());
-    }
     if image.is_some() && inspect.is_none() {
         return Err("--image goes with --inspect".into());
+    }
+    if against.is_some() && inspect.is_none() {
+        return Err("--against goes with --inspect".into());
+    }
+    if against.is_some() && opts.baseline.is_some() {
+        return Err("--against and --baseline both name what to compare with; give one".into());
+    }
+    if opts.fail_on_new && opts.baseline.is_none() && against.is_none() {
+        return Err("--fail-on new needs something to compare with: add --baseline <file>".into());
     }
     if let Some(package) = inspect {
         if scope.is_some() || view.is_some() || follow {
@@ -264,7 +277,7 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Invocation, Str
         if opts.json.as_ref().is_some_and(|j| j == "-") {
             return Err("--json - would mix with the install's own output; give a file name".into());
         }
-        return Ok(Invocation::Inspect { package, image, then: command, opts });
+        return Ok(Invocation::Inspect { package, against, image, then: command, opts });
     }
     if let Some(file) = view {
         if scope.is_some() || !command.is_empty() {
@@ -408,6 +421,7 @@ mod tests {
             p(&["--inspect", "npm:left-pad@1.3.0", "-q"]),
             Ok(Invocation::Inspect {
                 package: "npm:left-pad@1.3.0".into(),
+                against: None,
                 image: None,
                 then: vec![],
                 opts: Options { quiet: true, ..Options::default() }
@@ -424,6 +438,15 @@ mod tests {
         assert!(p(&["--inspect", "npm:x", "--view", "f"]).is_err());
         assert!(p(&["--inspect", "npm:x", "--json", "-"]).is_err());
         assert!(p(&["--image", "x", "--", "ls"]).is_err());
+        let Ok(Invocation::Inspect { against, opts, .. }) =
+            p(&["--inspect", "npm:x@2.0.0", "--against", "npm:x@1.0.0", "--fail-on", "new"])
+        else {
+            panic!("expected inspect");
+        };
+        assert_eq!(against.as_deref(), Some("npm:x@1.0.0"));
+        assert!(opts.fail_on_new, "the other package is what new is measured against");
+        assert!(p(&["--against", "npm:x", "--", "ls"]).is_err());
+        assert!(p(&["--inspect", "npm:x", "--against", "npm:y", "--baseline", "b.json"]).is_err());
     }
 
     #[test]

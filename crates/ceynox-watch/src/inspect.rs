@@ -271,31 +271,119 @@ fn quiet(runtime: &str, args: &[&OsStr]) -> Result<(), String> {
     if out.status.success() { Ok(()) } else { Err(String::from_utf8_lossy(&out.stderr).trim().to_string()) }
 }
 
-pub fn run(package: &str, image: Option<&str>, then: &[OsString], opts: Options) -> i32 {
-    let fail = |why: String| {
-        say(why);
-        FAILURE
-    };
-    let spec = match Spec::parse(package) {
-        Ok(s) => s,
-        Err(e) => return fail(e),
-    };
-    if image.is_some_and(|i| i.starts_with('-') || i.is_empty()) {
-        return fail("--image takes the name of a container image".into());
+/// What to install in the container: one package from a registry, or
+/// everything a project's lockfile names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Target {
+    Package(Spec),
+    /// `package-lock.json` (with the `package.json` beside it) or a
+    /// `requirements.txt`. The files are copied in; nothing else of the
+    /// project is.
+    Project {
+        ecosystem: Ecosystem,
+        files: Vec<PathBuf>,
+    },
+}
+
+/// Where a project's files are put in the container.
+const PROJECT: &str = "/ceynox-watch-project";
+
+impl Target {
+    fn parse(text: &str) -> Result<Self, String> {
+        let path = Path::new(text);
+        let name = path.file_name().and_then(OsStr::to_str).unwrap_or("");
+        if name == "package-lock.json" {
+            let manifest = path.with_file_name("package.json");
+            for file in [path, manifest.as_path()] {
+                if !file.is_file() {
+                    return Err(format!(
+                        "{} is not there; a lockfile is installed with the package.json beside it",
+                        file.display()
+                    ));
+                }
+            }
+            return Ok(Self::Project { ecosystem: Ecosystem::Npm, files: vec![manifest, path.to_path_buf()] });
+        }
+        if name.starts_with("requirements") && name.ends_with(".txt") {
+            if !path.is_file() {
+                return Err(format!("{} is not there", path.display()));
+            }
+            return Ok(Self::Project { ecosystem: Ecosystem::Pypi, files: vec![path.to_path_buf()] });
+        }
+        Spec::parse(text)
+            .map(Self::Package)
+            .map_err(|e| format!("{e}. Or give the path of a package-lock.json or a requirements.txt"))
     }
-    let image = image.unwrap_or(spec.image());
-    let (runtime, arch) = match runtime() {
-        Ok(found) => found,
-        Err(e) => return fail(e),
-    };
-    let binary = match watcher(&arch) {
-        Ok(b) => b,
-        Err(e) => return fail(e),
-    };
-    let scratch = match Scratch::new() {
-        Ok(s) => s,
-        Err(e) => return fail(format!("could not make a temporary directory: {e}")),
-    };
+
+    fn image(&self) -> &'static str {
+        match self {
+            Self::Package(spec) => spec.image(),
+            Self::Project { ecosystem: Ecosystem::Npm, .. } => "node:lts-slim",
+            Self::Project { ecosystem: Ecosystem::Pypi, .. } => "python:3-slim",
+        }
+    }
+
+    /// The install as a command line. For a project it is a shell script,
+    /// because the files have to be brought to the working directory
+    /// first; every word of it is ours.
+    fn install(&self) -> Vec<String> {
+        let strs = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        match self {
+            Self::Package(spec) => spec.install(),
+            Self::Project { ecosystem: Ecosystem::Npm, .. } => strs(&[
+                "sh",
+                "-c",
+                &format!(
+                    "cp {PROJECT}/package.json {PROJECT}/package-lock.json . && exec npm ci --no-audit --no-fund --no-update-notifier --loglevel=error"
+                ),
+            ]),
+            Self::Project { ecosystem: Ecosystem::Pypi, files } => {
+                let file = files[0].file_name().and_then(OsStr::to_str).unwrap_or("requirements.txt");
+                let mut cmd = strs(&[
+                    "python",
+                    "-m",
+                    "pip",
+                    "install",
+                    "--user",
+                    "--quiet",
+                    "--no-input",
+                    "--no-cache-dir",
+                    "--disable-pip-version-check",
+                    "--no-warn-script-location",
+                    "-r",
+                ]);
+                cmd.push(format!("{PROJECT}/{file}"));
+                cmd
+            }
+        }
+    }
+}
+
+/// One install in one container, start to finish.
+struct Outcome {
+    code: i32,
+    /// The recording, when it was asked for. Lives in `_scratch`.
+    recording: Option<PathBuf>,
+    _scratch: Scratch,
+}
+
+struct Job<'a> {
+    target: &'a Target,
+    /// What the user called it: `npm:left-pad@1.3.0`, or a file name.
+    label: &'a str,
+    image: &'a str,
+    runtime: &'a str,
+    binary: &'a Path,
+    then: &'a [OsString],
+    opts: &'a Options,
+    /// Show nothing: this run is only wanted for its recording.
+    silent: bool,
+    record: bool,
+}
+
+fn once(job: &Job<'_>) -> Result<Outcome, String> {
+    let Job { target, label, image, runtime, binary, then, opts, silent, record } = *job;
+    let scratch = Scratch::new().map_err(|e| format!("could not make a temporary directory: {e}"))?;
 
     // What the watcher inside is told: the same display options, a
     // recording, and the install as its command.
@@ -308,11 +396,10 @@ pub fn run(package: &str, image: Option<&str>, then: &[OsString], opts: Options)
                 && std::env::var_os("TERM").is_none_or(|t| t != "dumb")
         }
     };
-    let mut inner: Vec<OsString> =
-        vec![WATCHER.into(), "--color".into(), if color { "always" } else { "never" }.into()];
-    inner.extend(opts.quiet.then(|| "--quiet".into()));
-    inner.extend(opts.verbose.then(|| "--verbose".into()));
-    inner.extend((!opts.summary).then(|| "--no-summary".into()));
+    let mut inner: Vec<OsString> = vec!["--color".into(), if color { "always" } else { "never" }.into()];
+    inner.extend((opts.quiet || silent).then(|| "--quiet".into()));
+    inner.extend((opts.verbose && !silent).then(|| "--verbose".into()));
+    inner.extend((!opts.summary || silent).then(|| "--no-summary".into()));
     inner.extend([
         "--buffer-mb".into(),
         opts.buffer_mb.to_string().into(),
@@ -320,7 +407,7 @@ pub fn run(package: &str, image: Option<&str>, then: &[OsString], opts: Options)
         RECORDING.into(),
         "--".into(),
     ]);
-    let install = spec.install();
+    let install = target.install();
     if then.is_empty() {
         inner.extend(install.iter().map(OsString::from));
     } else {
@@ -328,11 +415,20 @@ pub fn run(package: &str, image: Option<&str>, then: &[OsString], opts: Options)
         // The install is written into the script as it is: every word of
         // it is one of our own flags or a checked package name, none of
         // which holds a character the shell would act on.
-        inner.extend(["sh".into(), "-c".into(), format!("{} && exec \"$@\"", install.join(" ")).into(), "sh".into()]);
+        let script = match target {
+            Target::Package(_) => install.join(" "),
+            // Already a script: take its body.
+            Target::Project { .. } if install.len() == 3 => install[2].replacen("exec ", "", 1),
+            Target::Project { .. } => install.join(" "),
+        };
+        inner.extend(["sh".into(), "-c".into(), format!("{script} && exec \"$@\"").into(), "sh".into()]);
         inner.extend(then.iter().cloned());
     }
 
-    let container = Container { runtime: &runtime, name: format!("ceynox-watch-inspect-{}", std::process::id()) };
+    // Two containers of ours may exist at once only by name clash, so the
+    // name carries the time as well as our pid.
+    let nanos = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos());
+    let container = Container { runtime, name: format!("ceynox-watch-inspect-{}-{nanos}", std::process::id()) };
     let width = rustix::termios::tcgetwinsize(std::io::stderr()).map_or(100, |w| w.ws_col);
     let tmpfs = |dir: &str| format!("{dir}:rw,exec,nosuid,uid=1000,gid=1000,mode=0755");
     let mut create: Vec<OsString> =
@@ -357,7 +453,7 @@ pub fn run(package: &str, image: Option<&str>, then: &[OsString], opts: Options)
             "--env",
             &format!("COLUMNS={width}"),
             "--env",
-            &format!("{}={package} in {image}", run::TITLE_ENV),
+            &format!("{}={label} in {image}", run::TITLE_ENV),
             "--env",
             "npm_config_update_notifier=false",
             "--entrypoint",
@@ -366,85 +462,186 @@ pub fn run(package: &str, image: Option<&str>, then: &[OsString], opts: Options)
         ]
         .map(OsString::from),
     );
-    create.extend(inner.into_iter().skip(1));
+    create.extend(inner);
 
-    if !opts.quiet {
-        say(format!("installing {package} in a throwaway {image} container ({runtime})"));
+    if !opts.quiet && !silent {
+        say(format!("installing {label} in a throwaway {image} container ({runtime})"));
     }
     // Fetch the image first when it is not here yet, without the layer by
     // layer progress that would otherwise open the output.
-    if quiet(&runtime, &["image", "inspect", image].map(OsStr::new)).is_err() {
+    if quiet(runtime, &["image", "inspect", image].map(OsStr::new)).is_err() {
         if !opts.quiet {
             say(format!("fetching {image}, which is only needed the first time"));
         }
-        if let Err(e) = quiet(&runtime, &["pull", "--quiet", image].map(OsStr::new)) {
-            return fail(format!("could not fetch {image}: {}", e.lines().last().unwrap_or("").trim()));
-        }
+        quiet(runtime, &["pull", "--quiet", image].map(OsStr::new))
+            .map_err(|e| format!("could not fetch {image}: {}", e.lines().last().unwrap_or("").trim()))?;
     }
-    let created = Command::new(&runtime).args(&create).stdin(Stdio::null()).stdout(Stdio::null()).status();
-    match created {
+    match Command::new(runtime).args(&create).stdin(Stdio::null()).stdout(Stdio::null()).status() {
         Ok(s) if s.success() => {}
-        Ok(_) => return fail(format!("{runtime} could not create the container")),
-        Err(e) => return fail(format!("could not run {runtime}: {e}")),
+        Ok(_) => return Err(format!("{runtime} could not create the container")),
+        Err(e) => return Err(format!("could not run {runtime}: {e}")),
     }
     let into = format!("{}:{WATCHER}", container.name);
-    if let Err(e) = quiet(&runtime, &["cp".as_ref(), binary.as_os_str(), into.as_ref()]) {
-        return fail(format!("could not put the watcher in the container: {e}"));
+    quiet(runtime, &["cp".as_ref(), binary.as_os_str(), into.as_ref()])
+        .map_err(|e| format!("could not put the watcher in the container: {e}"))?;
+    if let Target::Project { files, .. } = target {
+        // A copy of just the named files, readable by the install's user.
+        let dir = scratch.0.join("project");
+        let prepare = || -> std::io::Result<()> {
+            fs::DirBuilder::new().mode(0o755).create(&dir)?;
+            for file in files {
+                let to = dir.join(file.file_name().unwrap_or(OsStr::new("file")));
+                fs::copy(file, &to)?;
+                fs::set_permissions(&to, std::os::unix::fs::PermissionsExt::from_mode(0o644))?;
+            }
+            Ok(())
+        };
+        prepare().map_err(|e| format!("could not read the project's files: {e}"))?;
+        let into = format!("{}:{PROJECT}", container.name);
+        quiet(runtime, &["cp".as_ref(), dir.as_os_str(), into.as_ref()])
+            .map_err(|e| format!("could not put the project's files in the container: {e}"))?;
     }
 
     // Our output is the container's. A Ctrl-C reaches the container
     // runtime as well as us, and it passes it on; we stay to clean up.
     let signals = run::Signals::install();
-    let mut child =
-        match Command::new(&runtime).args(["start", "--attach", &container.name]).stdin(Stdio::null()).spawn() {
-            Ok(c) => c,
-            Err(e) => return fail(format!("could not run {runtime}: {e}")),
-        };
+    let mut start = Command::new(runtime);
+    start.args(["start", "--attach", &container.name]).stdin(Stdio::null());
+    if silent {
+        start.stdout(Stdio::null()).stderr(Stdio::null());
+    }
+    let mut child = start.spawn().map_err(|e| format!("could not run {runtime}: {e}"))?;
     let mut asked = false;
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) => {}
-            Err(e) => return fail(format!("lost track of the container: {e}")),
+            Err(e) => return Err(format!("lost track of the container: {e}")),
         }
         if signals.terminate.load(Ordering::Relaxed) && !asked {
             asked = true;
-            let _ = quiet(&runtime, &["kill", "--signal", "TERM", &container.name].map(OsStr::new));
+            let _ = quiet(runtime, &["kill", "--signal", "TERM", &container.name].map(OsStr::new));
         }
         std::thread::sleep(Duration::from_millis(50));
     };
     let code = status.code().unwrap_or(FAILURE);
     if code == FAILURE {
-        // The watcher inside could not start, and has said why. The usual
-        // reasons are worth a hint.
-        say(format!(
-            "if the sensor could not load: the container needs a kernel with BTF and a {runtime} that may grant \
-             CAP_BPF, which a rootless one cannot"
+        // The watcher inside could not start, and has said why (unless it
+        // was silenced). The usual reasons are worth a hint.
+        return Err(format!(
+            "the watcher could not start in the container. If the sensor could not load: the container needs \
+             a kernel with BTF and a {runtime} that may grant CAP_BPF, which a rootless one cannot"
         ));
-        return code;
+    }
+    let mut recording = None;
+    if record {
+        let to = scratch.0.join("run.jsonl");
+        let from = format!("{}:{RECORDING}", container.name);
+        quiet(runtime, &["cp".as_ref(), from.as_ref(), to.as_os_str()])
+            .map_err(|e| format!("could not fetch the recording from the container: {e}"))?;
+        recording = Some(to);
+    }
+    Ok(Outcome { code, recording, _scratch: scratch })
+}
+
+/// `--inspect <package> [--against <package>]`
+pub fn run(package: &str, against: Option<&str>, image: Option<&str>, then: &[OsString], opts: Options) -> i32 {
+    let fail = |why: String| {
+        say(why);
+        FAILURE
+    };
+    let target = match Target::parse(package) {
+        Ok(t) => t,
+        Err(e) => return fail(e),
+    };
+    let earlier = match against.map(Target::parse) {
+        None => None,
+        Some(Ok(t)) => Some(t),
+        Some(Err(e)) => return fail(e),
+    };
+    if image.is_some_and(|i| i.starts_with('-') || i.is_empty()) {
+        return fail("--image takes the name of a container image".into());
+    }
+    let (runtime, arch) = match runtime() {
+        Ok(found) => found,
+        Err(e) => return fail(e),
+    };
+    let binary = match watcher(&arch) {
+        Ok(b) => b,
+        Err(e) => return fail(e),
+    };
+    let short = |text: &str| Path::new(text).file_name().and_then(OsStr::to_str).unwrap_or(text).to_string();
+    let label = if matches!(target, Target::Package(_)) { package.to_string() } else { short(package) };
+
+    // The earlier one first, unseen: only what it did is wanted.
+    let mut compared = None;
+    if let (Some(earlier), Some(text)) = (&earlier, against) {
+        let name = if matches!(earlier, Target::Package(_)) { text.to_string() } else { short(text) };
+        if !opts.quiet {
+            say(format!("installing {name} first, to compare with"));
+        }
+        let job = Job {
+            target: earlier,
+            label: &name,
+            image: image.unwrap_or(earlier.image()),
+            runtime: &runtime,
+            binary: &binary,
+            then,
+            opts: &opts,
+            silent: true,
+            record: true,
+        };
+        let outcome = match once(&job) {
+            Ok(o) => o,
+            Err(e) => return fail(e),
+        };
+        if outcome.code != 0 {
+            return fail(format!(
+                "installing {name} failed with status {}, so there is nothing to compare with",
+                outcome.code
+            ));
+        }
+        let baseline = outcome.recording.as_deref().map(|r| crate::baseline::Baseline::load(r, Some(HOME.to_string())));
+        match baseline {
+            Some(Ok(b)) => compared = Some((b, name)),
+            Some(Err(e)) => return fail(e),
+            None => return fail("the earlier install left no recording".into()),
+        }
     }
 
-    let wants_more = opts.report.is_some()
+    let wants_more = compared.is_some()
+        || opts.report.is_some()
         || opts.baseline.is_some()
         || opts.write_baseline.is_some()
         || opts.json.is_some()
         || opts.fail_on_flagged
         || opts.fail_on_new;
-    if !wants_more {
-        return code;
-    }
-    let recording = scratch.0.join("run.jsonl");
-    let from = format!("{}:{RECORDING}", container.name);
-    if let Err(e) = quiet(&runtime, &["cp".as_ref(), from.as_ref(), recording.as_os_str()]) {
-        return fail(format!("could not fetch the recording from the container: {e}"));
-    }
+    let image = image.unwrap_or(target.image());
+    let job = Job {
+        target: &target,
+        label: &label,
+        image,
+        runtime: &runtime,
+        binary: &binary,
+        then,
+        opts: &opts,
+        silent: false,
+        record: wants_more,
+    };
+    let outcome = match once(&job) {
+        Ok(o) => o,
+        Err(e) => return fail(e),
+    };
+    let Some(recording) = &outcome.recording else {
+        return outcome.code;
+    };
     if let Some(file) = &opts.json
-        && let Err(e) = fs::copy(&recording, file)
+        && let Err(e) = fs::copy(recording, file)
     {
         return fail(format!("cannot write {}: {e}", file.to_string_lossy()));
     }
-    let title = format!("{package} in {image}");
-    run::conclude_recording(&recording, HOME, title, code, opts)
+    let title = format!("{label} in {image}");
+    run::conclude_recording(recording, HOME, title, outcome.code, opts, compared)
 }
 
 #[cfg(test)]
@@ -510,6 +707,11 @@ mod tests {
         assert!(pip.contains(&"--user".to_string()));
         assert_eq!(Spec::parse("pypi:requests").expect("spec").image(), "python:3-slim");
         assert_eq!(Spec::parse("npm:x").expect("spec").image(), "node:lts-slim");
+        // A lockfile that is not there is refused before anything is started.
+        assert!(Target::parse("/nowhere/package-lock.json").is_err());
+        assert!(Target::parse("/nowhere/requirements.txt").is_err());
+        assert!(matches!(Target::parse("npm:left-pad"), Ok(Target::Package(_))));
+        assert!(Target::parse("Cargo.lock").is_err());
         // The install is spliced into a shell script when a command
         // follows it, so no word of it may mean anything to a shell.
         for text in ["npm:@a.b/c_d~e@1.0.0-rc.1+build", "pypi:a.b_c-d==1!2.0+local", "pip:x@1.0"] {

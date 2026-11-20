@@ -288,6 +288,94 @@ fn peer_line(report: &Report, style: &Style, rec: &PeerRec) -> String {
     line
 }
 
+/// What one package's own code did, added up over its processes.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PackageRow {
+    pub name: String,
+    pub programs: usize,
+    pub destinations: usize,
+    pub flagged: usize,
+    pub sent: u64,
+    pub received: u64,
+    /// Whether any of its connections were measured.
+    pub measured: bool,
+}
+
+/// Every package that ran code of its own, in order of first appearance.
+pub fn packages(report: &Report, style: &Style) -> Vec<PackageRow> {
+    let mut rows: Vec<PackageRow> = Vec::new();
+    let mut row = |name: String| -> usize {
+        match rows.iter().position(|r| r.name == name) {
+            Some(i) => i,
+            None => {
+                rows.push(PackageRow { name, ..PackageRow::default() });
+                rows.len() - 1
+            }
+        }
+    };
+    let mut counts: Vec<(usize, &'static str, u64, u64, bool)> = Vec::new();
+    for (i, p) in report.procs.iter().enumerate() {
+        if p.execed
+            && let Some(pkg) = report.package(i)
+        {
+            counts.push((row(clean(&pkg)), "program", 0, 0, false));
+        }
+    }
+    for rec in report.peers.iter().filter(|r| !r.background) {
+        if let Some(pkg) = report.package(rec.first_by) {
+            counts.push((row(clean(&pkg)), "destination", rec.sent, rec.received, rec.closed > 0));
+        }
+    }
+    for group in finding_groups_by_package(report, style) {
+        counts.push((row(group), "flagged", 0, 0, false));
+    }
+    for (i, what, sent, received, measured) in counts {
+        let r = &mut rows[i];
+        match what {
+            "program" => r.programs += 1,
+            "destination" => {
+                r.destinations += 1;
+                r.sent += sent;
+                r.received += received;
+                r.measured |= measured;
+            }
+            _ => r.flagged += 1,
+        }
+    }
+    rows
+}
+
+/// The package of each entry under "worth a look" that has one.
+fn finding_groups_by_package(report: &Report, style: &Style) -> Vec<String> {
+    let mut seen: Vec<(String, String)> = Vec::new();
+    for f in &report.findings {
+        let Some(pkg) = report.package(f.proc) else {
+            continue;
+        };
+        let subject = match &f.subject {
+            Subject::File { path, write } => format!("{write} {}", show_path(report, style, path)),
+            Subject::Peer(peer) => show_peer(peer, report.peer_name(peer)),
+        };
+        let key = (clean(&pkg), subject);
+        if !seen.contains(&key) {
+            seen.push(key);
+        }
+    }
+    seen.into_iter().map(|(pkg, _)| pkg).collect()
+}
+
+/// One line of the packages section: `2 programs  1 destination  ↑3.7 kB ↓331.7 MB`.
+pub fn package_facts(row: &PackageRow) -> Vec<String> {
+    let mut facts = vec![count(row.programs, "program")];
+    if row.destinations > 0 {
+        facts.push(count(row.destinations, "destination"));
+    }
+    if row.measured {
+        facts.push(format!("↑{} ↓{}", size(row.sent), size(row.received)));
+    }
+    facts
+}
+
 /// One entry under "worth a look": a flagged thing, and who did it.
 #[derive(Debug, Clone)]
 pub struct Group {
@@ -389,6 +477,23 @@ pub fn summary(report: &Report, header: &Header, style: &Style) -> String {
             "   {}",
             style.paint(YELLOW, &format!("still running after the command exited: {}{more}", who.join(", ")))
         );
+    }
+
+    // Packages that ran code of their own.
+    let rows = packages(report, style);
+    if !rows.is_empty() {
+        let _ = writeln!(out, "\n {}  {} ran code", style.paint(BOLD, "PACKAGES"), rows.len());
+        let wide = rows.iter().take(30).map(|r| r.name.chars().count()).max().unwrap_or(0).min(40);
+        for row in rows.iter().take(30) {
+            let mut line = format!("   {:<wide$}  {}", fit(&row.name, 40), package_facts(row).join("  "));
+            if row.flagged > 0 {
+                let _ = write!(line, "  {}", style.paint(RED, &format!("{} flagged", row.flagged)));
+            }
+            let _ = writeln!(out, "{}", line.trim_end());
+        }
+        if rows.len() > 30 {
+            let _ = writeln!(out, "   +{} more", rows.len() - 30);
+        }
     }
 
     // Network.
@@ -577,6 +682,8 @@ mod tests {
             " npm install  1.5s  exit 0",
             " PROCESSES  2 started, 2 programs run",
             "   node  npm",
+            " PACKAGES  1 ran code",
+            "   npm:evil  1 program  1 destination  1 flagged",
             " NETWORK  1 destination",
             "   updates.example.net:443 (203.0.113.9)  tcp, https  node [npm:evil]",
             " FILES  2 read, 1 written",
