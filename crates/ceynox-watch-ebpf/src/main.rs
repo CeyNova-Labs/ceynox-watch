@@ -1,17 +1,16 @@
 //! Kernel side of ceynox-watch.
 //!
-//! Six small programs report what processes do, into one ring buffer:
+//! Seven small programs report what processes do, into one ring buffer:
 //!
-//! | Program    | Hook                                   | Record            |
-//! |------------|----------------------------------------|-------------------|
-//! | `on_fork`  | BTF tracepoint `sched_process_fork`    | `Fork`            |
-//! | `on_exec`  | BTF tracepoint `sched_process_exec`    | `Exec`            |
-//! | `on_exit`  | BTF tracepoint `sched_process_exit`    | `Exit`            |
-//! | `on_open`  | fentry `security_file_open`            | `Open`            |
-//! | `on_connect` | fentry `security_socket_connect`     | `Sock` (connect)  |
-//! | `on_send`  | fentry `security_socket_sendmsg`       | `Sock` (datagram) |
-//!
-//! | `on_close` | fentry `tcp_close`                    | `Closed`          |
+//! | Program      | Hook                                | Record            |
+//! |--------------|-------------------------------------|-------------------|
+//! | `on_fork`    | BTF tracepoint `sched_process_fork` | `Fork`            |
+//! | `on_exec`    | BTF tracepoint `sched_process_exec` | `Exec`            |
+//! | `on_exit`    | BTF tracepoint `sched_process_exit` | `Exit`            |
+//! | `on_open`    | fentry `security_file_open`         | `Open`            |
+//! | `on_connect` | fentry `security_socket_connect`    | `Sock` (connect)  |
+//! | `on_send`    | fentry `security_socket_sendmsg`    | `Sock` (datagram) |
+//! | `on_close`   | fentry `tcp_close`                  | `Closed`          |
 //!
 //! Another, `dns_replies`, is a socket filter. The loader attaches it to a
 //! packet socket of its own, where it selects DNS replies so that addresses
@@ -442,19 +441,26 @@ pub fn on_open(ctx: FEntryContext) -> i32 {
     // SAFETY: `path` is the kernel-typed `struct path` inside the `struct
     // file` argument; the helper writes at most PATH_CAP bytes into `ev.path`.
     let n = unsafe { generated::bpf_d_path(path, ev.path.as_mut_ptr() as *mut c_char, PATH_CAP as u32) };
-    if n <= 0 || n > PATH_CAP as i64 {
+    if n <= 0 {
         return 0;
     }
-    let len = n as usize;
 
     ev.head = head(KIND_OPEN, pid);
     ev.flags = kread::<u32>(file, o.file_f_flags).unwrap_or(0);
     ev.mode = mode;
-    ev.path_len = len as u32;
+    ev.path_len = n as u32;
     ev._pad = 0;
     ev.comm = comm();
 
-    // SAFETY: `len` is in 1..=PATH_CAP, so the slice stays inside the value.
+    // The length is bounded here, as the last thing before it is used and
+    // by an unsigned comparison, because that is where verifiers before
+    // Linux 6.11 need to see it: they lose track of a bound established
+    // earlier, across the calls above. `on_exec` does the same.
+    let mut len = ev.path_len as usize;
+    if len > PATH_CAP {
+        len = PATH_CAP;
+    }
+    // SAFETY: `len` is at most PATH_CAP, so the slice stays inside the value.
     let bytes = unsafe { core::slice::from_raw_parts(buf as *const u8, Open::HEAD_LEN + len) };
     if EVENTS.output(bytes, 0).is_err() {
         lost(LOST_FILE);
