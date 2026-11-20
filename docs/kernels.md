@@ -1,6 +1,6 @@
 # Kernels it has been run on
 
-Each row is `dev/smoke.sh` run against a real kernel: a small command watched, and eight things checked in the result. To add a row, run it and [post the output](https://github.com/CeyNova-Labs/ceynox-watch/issues/2):
+Each row is `dev/smoke.sh` run against a real kernel: a small command watched, and eight things checked in the result. To add a row, run it and [post the output in an issue](https://github.com/CeyNova-Labs/ceynox-watch/issues/new), working or not:
 
 ```sh
 dev/smoke.sh "$(command -v ceynox-watch)"
