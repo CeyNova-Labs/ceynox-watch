@@ -71,6 +71,8 @@ ceynox-watch traces nothing that could not be traced before. It makes the check 
 | [**Watch**](#watch) a command and everything it starts | `ceynox-watch -- npm install` |
 | [**Watch an AI agent**](#watch) that is already running | `ceynox-watch --pid "$(pgrep -n claude)"` |
 | [**Inspect**](#inspect-a-package-first) a package in a throwaway container | `ceynox-watch --inspect npm:some-package` |
+| [**Compare two versions**](#inspect-a-package-first) of a package | `ceynox-watch --inspect npm:pkg@2.0.0 --against npm:pkg@1.9.0` |
+| [**Inspect a lockfile**](#inspect-a-package-first): which dependencies run code | `ceynox-watch --inspect ./package-lock.json` |
 | [**Compare**](#compare-with-last-time) an install with last time | `ceynox-watch --baseline install.json -- npm ci` |
 | [**Fail a build**](#in-ci) when an install does something new | `uses: CeyNova-Labs/ceynox-watch@v0.2.4` |
 | [**Share**](#share-a-run) a run as HTML or Markdown | `ceynox-watch --report run.html -- make` |
@@ -106,6 +108,15 @@ ceynox-watch --inspect pypi:some-package -- python -c 'import some_package'
 </p>
 
 The install runs in a throwaway Docker container, as an unprivileged user with an empty home, and you get the usual record. A command after `--` runs in the same container once the install is done. It works from macOS too, with full Linux detail.
+
+Two more things it can install:
+
+```sh
+ceynox-watch --inspect npm:some-package@2.0.0 --against npm:some-package@1.9.0
+ceynox-watch --inspect ./package-lock.json          # or ./requirements.txt
+```
+
+`--against` installs the other version too and lists only what the inspected one does that it does not: the question a dependency update raises. A lockfile is installed whole, and the summary says which of its packages ran code of their own.
 
 [`docs/gallery`](docs/gallery) has the records of a few well-known packages, to show what ordinary looks like.
 
